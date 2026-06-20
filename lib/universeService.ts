@@ -6,12 +6,11 @@ import {
   overwriteRows,
 } from "@/lib/googleSheets";
 import { nowIso } from "@/lib/utils";
-import type { Stock, UniverseConstituent, UniverseType } from "@/lib/types";
+import type { Market, Stock, UniverseConstituent, UniverseType } from "@/lib/types";
 
 /**
- * 주의: 공식 KOSPI 200 / KOSDAQ 150 전체 구성종목은 KRX 등 권위 있는 외부 소스에서
- * 주기적으로 갱신해야 합니다. 외부 소스가 연결되지 않은 환경에서는 번들된 대표 종목
- * 시드로 유니버스를 구성하며, 이는 "데이터 부족" 상태로 간주합니다.
+ * 공식 KOSPI 200 / KOSDAQ 150 구성종목은 KRX(한국거래소) 공개 데이터에서 갱신한다.
+ * KRX 응답이 불가하면 번들된 대표 종목 시드로 폴백한다(데이터 부족 상태).
  */
 
 type UniverseSource = "sheet" | "seed";
@@ -23,13 +22,157 @@ export type UniverseResult = {
   message: string;
 };
 
-function seedKospi(): Stock[] {
-  return getStocksByMarket("KOSPI");
+export type UniverseConstituentsResult = {
+  type: UniverseType;
+  constituents: UniverseConstituent[];
+  source: UniverseSource;
+  message: string;
+};
+
+// ---------------------------------------------------------------------------
+// 시드 폴백
+// ---------------------------------------------------------------------------
+
+function seedToConstituent(stock: Stock, universeType: UniverseType, updatedAt: string): UniverseConstituent {
+  return {
+    id: stock.stockCode,
+    stockCode: stock.stockCode,
+    stockName: stock.stockName,
+    market: stock.market,
+    universeType,
+    marketCap: null,
+    avgTradingValue20: null,
+    isActive: true,
+    updatedAt,
+  };
 }
 
-function seedKosdaq(): Stock[] {
-  return getStocksByMarket("KOSDAQ");
+function seedKospi(updatedAt = nowIso()): UniverseConstituent[] {
+  return getStocksByMarket("KOSPI").map((stock) => seedToConstituent(stock, "KOSPI200", updatedAt));
 }
+
+function seedKosdaq(updatedAt = nowIso()): UniverseConstituent[] {
+  return getStocksByMarket("KOSDAQ").map((stock) => seedToConstituent(stock, "KOSDAQ150", updatedAt));
+}
+
+// ---------------------------------------------------------------------------
+// KRX 공식 구성종목 fetch
+// ---------------------------------------------------------------------------
+
+type KrxRow = {
+  ISU_SRT_CD?: string;
+  ISU_ABBRV?: string;
+  TDD_CLSPRC?: string;
+  MKTCAP?: string;
+  ACC_TRDVAL?: string;
+};
+
+const KRX_ENDPOINT = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd";
+
+// KRX 지수 코드: KOSPI 200 = (1, 028), KOSDAQ 150 = (2, 203)
+const KRX_INDEX_CONFIG: Record<
+  "KOSPI200" | "KOSDAQ150",
+  { indIdx: string; indIdx2: string; indexName: string; market: Market }
+> = {
+  KOSPI200: { indIdx: "1", indIdx2: "028", indexName: "코스피 200", market: "KOSPI" },
+  KOSDAQ150: { indIdx: "2", indIdx2: "203", indexName: "코스닥 150", market: "KOSDAQ" },
+};
+
+function parseKrxNumber(value?: string): number | null {
+  if (!value) return null;
+  const parsed = Number(value.replace(/,/g, "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** 최근 영업일 후보(KST 기준, 주말 제외) YYYYMMDD 문자열 배열 */
+function recentBusinessDays(count: number): string[] {
+  const days: string[] = [];
+  const baseKstMs = Date.now() + 9 * 60 * 60 * 1000;
+  for (let i = 0; days.length < count && i < count + 6; i += 1) {
+    const d = new Date(baseKstMs - i * 86_400_000);
+    const weekday = d.getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    days.push(d.toISOString().slice(0, 10).replace(/-/g, ""));
+  }
+  return days;
+}
+
+async function requestKrx(trdDd: string, config: (typeof KRX_INDEX_CONFIG)[keyof typeof KRX_INDEX_CONFIG]): Promise<KrxRow[]> {
+  const body = new URLSearchParams({
+    bld: "dbms/MDC/STAT/standard/MDCSTAT00601",
+    locale: "ko_KR",
+    tboxindIdx_finder_equidx0_2: config.indexName,
+    indIdx: config.indIdx,
+    indIdx2: config.indIdx2,
+    codeNmindIdx_finder_equidx0_2: config.indexName,
+    param1indIdx_finder_equidx0_2: "",
+    trdDd,
+    money: "1",
+    csvxls_isNo: "false",
+  });
+
+  const response = await fetch(KRX_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "User-Agent": "Mozilla/5.0",
+      Referer: "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd",
+    },
+    body: body.toString(),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`KRX 응답 오류 (${response.status})`);
+  }
+
+  const json = (await response.json()) as Record<string, unknown>;
+  const rows = (json.output ?? json.OutBlock_1 ?? json.block1 ?? []) as KrxRow[];
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function fetchKrxIndexConstituents(
+  universeType: "KOSPI200" | "KOSDAQ150",
+  updatedAt: string,
+): Promise<UniverseConstituent[]> {
+  const config = KRX_INDEX_CONFIG[universeType];
+
+  for (const trdDd of recentBusinessDays(6)) {
+    let rows: KrxRow[];
+    try {
+      rows = await requestKrx(trdDd, config);
+    } catch {
+      continue;
+    }
+
+    const mapped = rows
+      .map((row): UniverseConstituent | null => {
+        const stockCode = (row.ISU_SRT_CD ?? "").trim();
+        const stockName = (row.ISU_ABBRV ?? "").trim();
+        if (!/^\d{6}$/.test(stockCode) || !stockName) return null;
+        return {
+          id: stockCode,
+          stockCode,
+          stockName,
+          market: config.market,
+          universeType,
+          marketCap: parseKrxNumber(row.MKTCAP),
+          avgTradingValue20: parseKrxNumber(row.ACC_TRDVAL),
+          isActive: true,
+          updatedAt,
+        };
+      })
+      .filter((item): item is UniverseConstituent => item != null);
+
+    if (mapped.length > 0) return mapped;
+  }
+
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// 캐시 읽기
+// ---------------------------------------------------------------------------
 
 type ConstituentRow = {
   id?: string;
@@ -55,7 +198,7 @@ function rowToConstituent(row: ConstituentRow): UniverseConstituent | null {
     id: String(row.id ?? row.stockCode),
     stockCode: String(row.stockCode),
     stockName: String(row.stockName),
-    market: (row.market as Stock["market"]) ?? "UNKNOWN",
+    market: (row.market as Market) ?? "UNKNOWN",
     universeType: (row.universeType as UniverseType) ?? "CUSTOM",
     marketCap: toNumberOrNull(row.marketCap),
     avgTradingValue20: toNumberOrNull(row.avgTradingValue20),
@@ -76,6 +219,10 @@ async function readCachedConstituents(): Promise<UniverseConstituent[]> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 유니버스 구성
+// ---------------------------------------------------------------------------
+
 function rankTopByLiquidity(constituents: UniverseConstituent[], limit: number): UniverseConstituent[] {
   return [...constituents]
     .sort((left, right) => {
@@ -86,109 +233,104 @@ function rankTopByLiquidity(constituents: UniverseConstituent[], limit: number):
     .slice(0, limit);
 }
 
-function dedupeStocks(stocks: Stock[]): Stock[] {
+function dedupe(constituents: UniverseConstituent[]): UniverseConstituent[] {
   const seen = new Set<string>();
-  const result: Stock[] = [];
-  for (const stock of stocks) {
-    if (seen.has(stock.stockCode)) continue;
-    seen.add(stock.stockCode);
-    result.push(stock);
+  const result: UniverseConstituent[] = [];
+  for (const item of constituents) {
+    if (seen.has(item.stockCode)) continue;
+    seen.add(item.stockCode);
+    result.push(item);
   }
   return result;
 }
 
-/**
- * KOSDAQ 150 중 시가총액/거래대금/유동성 기준 상위 100개를 선정한다.
- * 캐시 데이터에 시총·거래대금이 없으면 시드 순서를 사용한다.
- */
-function buildKosdaq100(cached: UniverseConstituent[], fallback: Stock[]): Stock[] {
-  const kosdaq = cached.filter((item) => item.market === "KOSDAQ");
-  if (kosdaq.length > 100) {
-    return rankTopByLiquidity(kosdaq, 100);
-  }
-  return fallback.slice(0, 100);
+/** KOSDAQ 150 중 시가총액/거래대금/유동성 상위 100개 선정 */
+function buildKosdaq100(kosdaq: UniverseConstituent[]): UniverseConstituent[] {
+  if (kosdaq.length > 100) return rankTopByLiquidity(kosdaq, 100);
+  return kosdaq.slice(0, 100);
 }
 
-export async function getUniverse(type: UniverseType): Promise<UniverseResult> {
+export async function getUniverseConstituents(type: UniverseType): Promise<UniverseConstituentsResult> {
   const cached = await readCachedConstituents();
   const hasCache = cached.length > 0;
 
-  const cachedKospi = cached.filter((item) => item.market === "KOSPI");
-  const cachedKosdaq = cached.filter((item) => item.market === "KOSDAQ");
+  const kospiPool = hasCache && cached.some((c) => c.market === "KOSPI")
+    ? cached.filter((c) => c.market === "KOSPI")
+    : seedKospi();
+  const kosdaqPool = hasCache && cached.some((c) => c.market === "KOSDAQ")
+    ? cached.filter((c) => c.market === "KOSDAQ")
+    : seedKosdaq();
 
-  let stocks: Stock[];
+  let constituents: UniverseConstituent[];
   switch (type) {
     case "KOSPI200":
-      stocks = hasCache && cachedKospi.length > 0 ? cachedKospi : seedKospi();
+      constituents = kospiPool;
       break;
     case "KOSDAQ150":
-      stocks = hasCache && cachedKosdaq.length > 0 ? cachedKosdaq : seedKosdaq();
+      constituents = kosdaqPool;
       break;
     case "KOSDAQ100":
-      stocks = buildKosdaq100(cached, hasCache && cachedKosdaq.length > 0 ? cachedKosdaq : seedKosdaq());
+      constituents = buildKosdaq100(kosdaqPool);
       break;
-    case "KOSPI200_KOSDAQ100": {
-      const kospi = hasCache && cachedKospi.length > 0 ? cachedKospi : seedKospi();
-      const kosdaq100 = buildKosdaq100(cached, hasCache && cachedKosdaq.length > 0 ? cachedKosdaq : seedKosdaq());
-      stocks = [...kospi, ...kosdaq100];
+    case "KOSPI200_KOSDAQ100":
+      constituents = [...kospiPool, ...buildKosdaq100(kosdaqPool)];
       break;
-    }
     case "CUSTOM":
     default:
-      stocks = cached;
+      constituents = cached;
       break;
   }
 
-  const deduped = dedupeStocks(stocks).slice(0, MAX_SCAN_UNIVERSE);
+  const deduped = dedupe(constituents).slice(0, MAX_SCAN_UNIVERSE);
 
   return {
     type,
-    stocks: deduped,
+    constituents: deduped,
     source: hasCache ? "sheet" : "seed",
     message: hasCache
       ? "Google Sheets에 캐싱된 유니버스를 사용했습니다."
-      : "외부 구성종목 소스가 없어 번들 시드 유니버스를 사용했습니다. (데이터 부족)",
+      : "캐싱된 구성종목이 없어 번들 시드 유니버스를 사용했습니다. (데이터 부족) 유니버스 갱신을 실행하세요.",
   };
 }
 
-/**
- * 시드 기반 유니버스를 universe_constituents 시트에 캐싱한다.
- * 외부 권위 소스를 연결할 경우 이 함수에서 fetch 후 저장하도록 확장한다.
- */
-export async function refreshUniverse(): Promise<{ count: number; message: string }> {
+export async function getUniverse(type: UniverseType): Promise<UniverseResult> {
+  const result = await getUniverseConstituents(type);
+  return {
+    type,
+    stocks: result.constituents.map((c) => ({ stockCode: c.stockCode, stockName: c.stockName, market: c.market })),
+    source: result.source,
+    message: result.message,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 갱신 (KRX → 시드 폴백) + Google Sheets 캐싱
+// ---------------------------------------------------------------------------
+
+export async function refreshUniverse(): Promise<{ count: number; source: string; message: string }> {
   if (!hasGoogleSheetsConfig()) {
-    return { count: 0, message: "Google Sheets 환경변수가 없어 유니버스를 캐싱할 수 없습니다." };
+    return { count: 0, source: "none", message: "Google Sheets 환경변수가 없어 유니버스를 캐싱할 수 없습니다." };
   }
 
   const updatedAt = nowIso();
-  const kospi = seedKospi().map((stock) => ({
-    id: stock.stockCode,
-    stockCode: stock.stockCode,
-    stockName: stock.stockName,
-    market: stock.market,
-    universeType: "KOSPI200" as UniverseType,
-    marketCap: "",
-    avgTradingValue20: "",
-    isActive: true,
-    updatedAt,
-  }));
-  const kosdaq = seedKosdaq().map((stock) => ({
-    id: stock.stockCode,
-    stockCode: stock.stockCode,
-    stockName: stock.stockName,
-    market: stock.market,
-    universeType: "KOSDAQ150" as UniverseType,
-    marketCap: "",
-    avgTradingValue20: "",
-    isActive: true,
-    updatedAt,
-  }));
 
-  const rows = [...kospi, ...kosdaq];
+  let kospi = await fetchKrxIndexConstituents("KOSPI200", updatedAt);
+  let kosdaq = await fetchKrxIndexConstituents("KOSDAQ150", updatedAt);
+
+  const kospiSource = kospi.length > 0 ? "KRX" : "시드";
+  const kosdaqSource = kosdaq.length > 0 ? "KRX" : "시드";
+
+  if (kospi.length === 0) kospi = seedKospi(updatedAt);
+  if (kosdaq.length === 0) kosdaq = seedKosdaq(updatedAt);
+
+  const rows = [...kospi, ...kosdaq].map((c) => ({ ...c }));
   await overwriteRows("universe_constituents", rows);
+
+  const source = kospiSource === "KRX" && kosdaqSource === "KRX" ? "krx" : kospiSource === "시드" && kosdaqSource === "시드" ? "seed" : "mixed";
 
   return {
     count: rows.length,
-    message: `시드 기반 유니버스 ${rows.length}종목을 캐싱했습니다. 공식 KOSPI200/KOSDAQ150 전체 구성종목은 외부 소스 연동 후 갱신하세요.`,
+    source,
+    message: `KOSPI200 ${kospi.length}종목(${kospiSource}), KOSDAQ150 ${kosdaq.length}종목(${kosdaqSource})을 캐싱했습니다.`,
   };
 }

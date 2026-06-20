@@ -214,13 +214,26 @@ export async function runMarketScan(filters: ScanFilters, options: RunOptions = 
   const scanRunId = crypto.randomUUID();
 
   // 1. 유니버스 구성 (lazy import로 순환 의존 방지)
-  const { getUniverse } = await import("@/lib/universeService");
-  const universe = await getUniverse(filters.target);
+  const { getUniverseConstituents } = await import("@/lib/universeService");
+  const universe = await getUniverseConstituents(filters.target);
+  const stocks = universe.constituents.map((c) => ({
+    stockCode: c.stockCode,
+    stockName: c.stockName,
+    market: c.market,
+  }));
+  const marketCapMap = new Map(universe.constituents.map((c) => [c.stockCode, c.marketCap]));
 
   // 2. 룰 기반 배치 분석
-  const analyses = await analyzeUniverse(universe.stocks, filters.targetProfitRate, (done, total, current) => {
+  const analyses = await analyzeUniverse(stocks, filters.targetProfitRate, (done, total, current) => {
     onProgress?.({ done, total, currentName: current.stockName });
   });
+
+  // 유니버스의 공식 시가총액(KRX)을 분석 결과에 주입한다.
+  for (const analysis of analyses) {
+    if (analysis.status === "ok" && analysis.marketCap == null) {
+      analysis.marketCap = marketCapMap.get(analysis.stock.stockCode) ?? null;
+    }
+  }
 
   // 3. 1차 필터
   const passed = analyses.filter((analysis) => runFirstFilter(analysis, filters).passed);
