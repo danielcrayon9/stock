@@ -40,11 +40,6 @@ function nearestBelow(currentPrice: number, values: Array<number | null | undefi
   return valid.length > 0 ? Math.max(...valid) : null;
 }
 
-function nearestAbove(currentPrice: number, values: Array<number | null | undefined>) {
-  const valid = values.filter((value): value is number => value != null && Number.isFinite(value) && value > currentPrice);
-  return valid.length > 0 ? Math.min(...valid) : null;
-}
-
 function maxValidNearAbove(currentPrice: number, maxPremiumRate: number, values: Array<number | null | undefined>) {
   const upperBound = currentPrice * (1 + maxPremiumRate);
   const valid = values.filter(
@@ -52,6 +47,42 @@ function maxValidNearAbove(currentPrice: number, maxPremiumRate: number, values:
       value != null && Number.isFinite(value) && value > 0 && value >= currentPrice && value <= upperBound,
   );
   return valid.length > 0 ? Math.max(...valid) : null;
+}
+
+function maxValidInPriceBand(
+  currentPrice: number,
+  maxDiscountRate: number,
+  maxPremiumRate: number,
+  values: Array<number | null | undefined>,
+) {
+  const lowerBound = currentPrice * (1 - maxDiscountRate);
+  const upperBound = currentPrice * (1 + maxPremiumRate);
+  const valid = values.filter(
+    (value): value is number =>
+      value != null && Number.isFinite(value) && value > 0 && value >= lowerBound && value <= upperBound,
+  );
+  return valid.length > 0 ? Math.max(...valid) : null;
+}
+
+function nearestAboveInBand(
+  currentPrice: number,
+  minUpsideRate: number,
+  maxUpsideRate: number,
+  values: Array<number | null | undefined>,
+) {
+  const lowerBound = currentPrice * (1 + minUpsideRate);
+  const upperBound = currentPrice * (1 + maxUpsideRate);
+  const valid = values.filter(
+    (value): value is number =>
+      value != null && Number.isFinite(value) && value > 0 && value >= lowerBound && value <= upperBound,
+  );
+  return valid.length > 0 ? Math.min(...valid) : null;
+}
+
+function fallbackTarget(currentPrice: number, atr: number | null, minRate: number, maxRate: number) {
+  const atrMove = atr != null ? (atr / currentPrice) * 2.2 : minRate;
+  const rate = Math.max(minRate, Math.min(maxRate, atrMove));
+  return currentPrice * (1 + rate);
 }
 
 function ratio(targetPrice: number | null, buyPrice: number | null, stopLossPrice: number | null) {
@@ -71,8 +102,11 @@ function scenarioSuitability(
 ): EntrySuitability {
   if (buyPrice == null || targetPrice == null || stopLossPrice == null || riskRewardRatio == null) return "데이터 부족";
   if (stopLossPrice >= buyPrice) return "부적합";
+  const lossRate = (buyPrice - stopLossPrice) / buyPrice;
+  if (lossRate > 0.12) return "관망";
   if (riskRewardRatio < 2) return "관망";
   if (riskScore != null && riskScore >= 70) return "부적합";
+  if (lossRate > 0.08 && riskScore != null && riskScore >= 55) return "분할 접근";
   if (riskScore != null && riskScore >= 55) return "분할 접근";
   return "적합";
 }
@@ -164,14 +198,41 @@ export function calculateEntryPrices({
   const resistance = supportResistance.primaryResistance;
   const previousHigh = technical.previousHigh;
   const previousLow = technical.previousLow;
+  const high52Week = technical.high52Week;
   const targetRate = Math.max(3, targetProfitRate) / 100;
 
-  const structuralStop = nearestBelow(currentPrice, [
+  const conservativeBuyPrice = maxValidInPriceBand(currentPrice, 0.18, 0.005, [
+    support != null ? support * 1.005 : null,
+    latest.ma60 != null ? latest.ma60 * 1.002 : null,
+    latest.ma120 != null ? latest.ma120 * 1.002 : null,
+    latest.bollingerLower != null ? latest.bollingerLower * 1.01 : null,
+    atr != null ? currentPrice - atr * 1.2 : null,
+  ]);
+  const neutralBuyPrice = maxValidInPriceBand(currentPrice, 0.08, 0.01, [
+    latest.ma20 != null ? latest.ma20 * 1.002 : null,
+    support != null ? support * 1.015 : null,
+    previousHigh != null ? previousHigh * 0.97 : null,
+    atr != null ? currentPrice - atr * 0.55 : null,
+  ]);
+  const isOverheated =
+    (latest.rsi14 != null && latest.rsi14 >= 72) ||
+    (latest.ma20 != null && atr != null && currentPrice > latest.ma20 + atr * 2);
+  const aggressiveBuyPrice = isOverheated
+    ? null
+    : maxValidNearAbove(currentPrice, 0.02, [
+        previousHigh != null ? previousHigh * 1.003 : null,
+        resistance != null ? resistance * 1.002 : null,
+        currentPrice,
+      ]);
+
+  const referenceBuyPrice = minValid([conservativeBuyPrice, neutralBuyPrice, aggressiveBuyPrice]) ?? currentPrice;
+  const structuralStop = nearestBelow(referenceBuyPrice, [
     support != null ? support * 0.985 : null,
     previousLow != null ? previousLow * 0.985 : null,
     latest.ma60 != null ? latest.ma60 * 0.97 : null,
+    latest.bollingerLower != null ? latest.bollingerLower * 0.98 : null,
   ]);
-  const atrStop = atr != null ? currentPrice - atr * 1.5 : null;
+  const atrStop = atr != null ? referenceBuyPrice - atr * 1.5 : null;
   const stopLossPrice = roundPrice(maxValid([structuralStop, atrStop]));
 
   if (stopLossPrice == null || stopLossPrice >= currentPrice) {
@@ -191,26 +252,19 @@ export function calculateEntryPrices({
     };
   }
 
-  const conservativeBuyPrice = minValid([
-    support != null ? support * 1.01 : null,
-    latest.ma60,
-    latest.ma120,
-    currentPrice - (atr ?? currentPrice * 0.04),
+  const resistanceTarget1 = nearestAboveInBand(currentPrice, 0.04, 0.28, [resistance, previousHigh, high52Week]);
+  const targetPrice1 = roundPrice(
+    resistanceTarget1 ?? fallbackTarget(currentPrice, atr, Math.min(0.06, targetRate * 0.35), Math.min(0.12, targetRate * 0.7)),
+  );
+  const resistanceTarget2 = nearestAboveInBand(currentPrice, 0.08, 0.45, [
+    high52Week,
+    resistance != null ? resistance * 1.05 : null,
+    previousHigh != null ? previousHigh * 1.08 : null,
   ]);
-  const neutralBuyPrice = minValid([
-    latest.ma20 != null ? latest.ma20 * 1.005 : null,
-    previousHigh != null ? previousHigh * 0.97 : null,
-    currentPrice * 0.985,
-  ]);
-  const aggressiveBuyPrice = maxValidNearAbove(currentPrice, 0.03, [
-    previousHigh != null ? previousHigh * 1.005 : null,
-    resistance != null ? resistance * 1.003 : null,
-    currentPrice,
-  ]);
-
-  const baseTarget1 = nearestAbove(currentPrice, [resistance, previousHigh, technical.high52Week]);
-  const targetPrice1 = roundPrice(maxValid([baseTarget1, currentPrice * (1 + targetRate * 0.5)]));
-  const targetPrice2 = roundPrice(maxValid([currentPrice * (1 + targetRate), resistance != null ? resistance * 1.05 : null]));
+  const fallbackTarget2 = targetPrice1 != null
+    ? targetPrice1 + Math.max((atr ?? currentPrice * 0.03) * 2, currentPrice * Math.min(0.12, targetRate * 0.65))
+    : fallbackTarget(currentPrice, atr, Math.min(0.1, targetRate * 0.5), Math.min(0.22, targetRate));
+  const targetPrice2 = roundPrice(maxValid([resistanceTarget2, fallbackTarget2]));
 
   const scenarios = [
     createScenario("보수적", conservativeBuyPrice, targetPrice1, stopLossPrice, score.riskScore, [
@@ -232,6 +286,8 @@ export function calculateEntryPrices({
     support != null ? `주요 지지선: ${roundPrice(support)?.toLocaleString("ko-KR")}원` : "주요 지지선: 데이터 부족",
     resistance != null ? `주요 저항선: ${roundPrice(resistance)?.toLocaleString("ko-KR")}원` : "주요 저항선: 데이터 부족",
     atr != null ? `ATR14 기준 변동성: ${roundPrice(atr)?.toLocaleString("ko-KR")}원` : "ATR14: 데이터 부족",
+    "매수가는 지지선·이동평균·ATR 눌림 기준의 실행 가능한 범위만 사용합니다.",
+    "목표가는 실제 저항/전고점/52주 고점을 우선하고, 없을 때만 ATR 기반 대체 목표를 사용합니다.",
     decision.riskRewardRatio != null
       ? `최고 손익비: 1:${decision.riskRewardRatio.toFixed(2)}`
       : "손익비: 데이터 부족",
