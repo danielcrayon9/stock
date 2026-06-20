@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import RecommendationCard from "@/components/RecommendationCard";
 import { RECOMMENDATION_TYPES } from "@/lib/constants";
-import { formatKRW, formatPercent, formatRatio, formatScore } from "@/lib/formatters";
+import { formatPercent, formatRatio, formatScore } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import type { RecommendationType, ScanResultRow } from "@/lib/types";
 
@@ -60,6 +60,11 @@ function MobileMetric({ label, value }: { label: string; value: ReactNode }) {
 
 function sortValue(row: ScanResultRow, key: SortKey) {
   return row[key];
+}
+
+function formatPriceNumber(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return "데이터 부족";
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
 }
 
 export default function RecommendationTable({ results }: RecommendationTableProps) {
@@ -181,7 +186,7 @@ export default function RecommendationTable({ results }: RecommendationTableProp
               </button>
 
               <div className="mt-4 grid grid-cols-2 gap-2">
-                <MobileMetric label="현재가" value={formatKRW(row.currentPrice)} />
+                <MobileMetric label="현재가" value={<span className="text-base font-black">{formatPriceNumber(row.currentPrice)}</span>} />
                 <MobileMetric label="등락률" value={<ChangeRate value={row.changeRate} />} />
                 <MobileMetric label="종합" value={formatScore(row.totalScore)} />
                 <MobileMetric label="손익비" value={formatRatio(row.riskRewardRatio)} />
@@ -257,7 +262,7 @@ export default function RecommendationTable({ results }: RecommendationTableProp
                       <p className="text-xs text-slate-400">{row.stockCode}</p>
                     </td>
                     <td className="px-3 py-3 text-slate-500">{row.market}</td>
-                    <td className="px-3 py-3 text-right text-slate-900">{formatKRW(row.currentPrice)}</td>
+                    <td className="px-3 py-3 text-right text-base font-black text-slate-950">{formatPriceNumber(row.currentPrice)}</td>
                     <td className="px-3 py-3 text-right">
                       <ChangeRate value={row.changeRate} />
                     </td>
