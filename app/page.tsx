@@ -1,65 +1,63 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Radar, Sparkles, ShieldCheck } from "lucide-react";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <>
+      <section className="rounded-3xl bg-slate-950 p-8 text-white">
+        <div className="max-w-3xl">
+          <p className="mb-3 text-sm font-bold uppercase tracking-[0.25em] text-cyan-300">시장 스캐너</p>
+          <h1 className="text-4xl font-black tracking-tight sm:text-5xl">대한민국 주식시장 분석 시스템</h1>
+          <p className="mt-5 text-lg leading-8 text-slate-300">
+            종목을 직접 입력하지 않아도 됩니다. KOSPI 200과 KOSDAQ 상위 후보군을 자동으로 스캔해
+            현재 매수 가능성이 높은 종목을 점수화하고 추천 유형별로 분류합니다.
           </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/scanner"
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-950"
+            >
+              시장 스캔 시작 <Radar className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/recommendations"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-5 py-3 text-sm font-bold text-white"
+            >
+              추천 종목 보기 <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </section>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <Radar className="h-8 w-8 text-cyan-600" />
+            <CardTitle>자동 시장 스캔</CardTitle>
+            <CardDescription>
+              유니버스를 자동 구성하고 일·주·월·년봉, 거래대금, 추세, 지지/저항, 공시, 실적, 뉴스, 리스크를 일괄 분석합니다.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <Sparkles className="h-8 w-8 text-emerald-600" />
+            <CardTitle>추천 유형 분류</CardTitle>
+            <CardDescription>
+              즉시 관심 · 분할매수 · 눌림목 대기 · 돌파 관심 · 제외 후보로 구분합니다. 상위 후보만 AI가 최종 판단합니다.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <ShieldCheck className="h-8 w-8 text-blue-600" />
+            <CardTitle>투자 판단 보조</CardTitle>
+            <CardDescription>
+              자동매매·주문 기능은 제공하지 않습니다. 본 분석은 투자 판단 보조용이며 매수·매도 추천이 아닙니다.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    </>
   );
 }

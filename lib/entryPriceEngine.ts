@@ -1,0 +1,252 @@
+import type {
+  EntryPriceResult,
+  EntryPriceScenario,
+  EntrySuitability,
+  FinalOpinionBase,
+  ScoreResult,
+  SupportResistanceResult,
+  TechnicalAnalysisResult,
+  VolumeAnalysisResult,
+} from "@/lib/types";
+
+type EntryPriceInput = {
+  technical: TechnicalAnalysisResult;
+  supportResistance: SupportResistanceResult;
+  volume: VolumeAnalysisResult;
+  score: ScoreResult;
+  targetProfitRate: number;
+};
+
+function roundPrice(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value) || value <= 0) return null;
+  if (value >= 100000) return Math.round(value / 500) * 500;
+  if (value >= 10000) return Math.round(value / 100) * 100;
+  if (value >= 1000) return Math.round(value / 10) * 10;
+  return Math.round(value);
+}
+
+function minValid(values: Array<number | null | undefined>) {
+  const valid = values.filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
+  return valid.length > 0 ? Math.min(...valid) : null;
+}
+
+function maxValid(values: Array<number | null | undefined>) {
+  const valid = values.filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
+  return valid.length > 0 ? Math.max(...valid) : null;
+}
+
+function nearestBelow(currentPrice: number, values: Array<number | null | undefined>) {
+  const valid = values.filter((value): value is number => value != null && Number.isFinite(value) && value > 0 && value < currentPrice);
+  return valid.length > 0 ? Math.max(...valid) : null;
+}
+
+function nearestAbove(currentPrice: number, values: Array<number | null | undefined>) {
+  const valid = values.filter((value): value is number => value != null && Number.isFinite(value) && value > currentPrice);
+  return valid.length > 0 ? Math.min(...valid) : null;
+}
+
+function ratio(targetPrice: number | null, buyPrice: number | null, stopLossPrice: number | null) {
+  if (targetPrice == null || buyPrice == null || stopLossPrice == null) return null;
+  const expectedProfit = targetPrice - buyPrice;
+  const expectedLoss = buyPrice - stopLossPrice;
+  if (expectedProfit <= 0 || expectedLoss <= 0) return null;
+  return expectedProfit / expectedLoss;
+}
+
+function scenarioSuitability(
+  buyPrice: number | null,
+  targetPrice: number | null,
+  stopLossPrice: number | null,
+  riskRewardRatio: number | null,
+  riskScore: number | null,
+): EntrySuitability {
+  if (buyPrice == null || targetPrice == null || stopLossPrice == null || riskRewardRatio == null) return "데이터 부족";
+  if (stopLossPrice >= buyPrice) return "부적합";
+  if (riskRewardRatio < 2) return "관망";
+  if (riskScore != null && riskScore >= 70) return "부적합";
+  if (riskScore != null && riskScore >= 55) return "분할 접근";
+  return "적합";
+}
+
+function createScenario(
+  label: EntryPriceScenario["label"],
+  buyPrice: number | null,
+  targetPrice: number | null,
+  stopLossPrice: number | null,
+  riskScore: number | null,
+  reasoning: string[],
+): EntryPriceScenario {
+  const roundedBuy = roundPrice(buyPrice);
+  const roundedTarget = roundPrice(targetPrice);
+  const roundedStop = roundPrice(stopLossPrice);
+  const riskRewardRatio = ratio(roundedTarget, roundedBuy, roundedStop);
+
+  return {
+    label,
+    buyPrice: roundedBuy,
+    targetPrice: roundedTarget,
+    stopLossPrice: roundedStop,
+    expectedProfit: roundedTarget != null && roundedBuy != null ? roundPrice(roundedTarget - roundedBuy) : null,
+    expectedLoss: roundedBuy != null && roundedStop != null ? roundPrice(roundedBuy - roundedStop) : null,
+    riskRewardRatio: riskRewardRatio == null ? null : Math.round(riskRewardRatio * 100) / 100,
+    suitability: scenarioSuitability(roundedBuy, roundedTarget, roundedStop, riskRewardRatio, riskScore),
+    reasoning,
+  };
+}
+
+function decideFinalOpinion(scenarios: EntryPriceScenario[], score: ScoreResult, volume: VolumeAnalysisResult): {
+  entrySuitability: EntrySuitability;
+  finalOpinionBase: FinalOpinionBase;
+  riskRewardRatio: number | null;
+} {
+  const validRatios = scenarios
+    .map((scenario) => scenario.riskRewardRatio)
+    .filter((value): value is number => value != null && Number.isFinite(value));
+  const bestRatio = validRatios.length > 0 ? Math.max(...validRatios) : null;
+  const suitableCount = scenarios.filter((scenario) => scenario.suitability === "적합").length;
+  const splitCount = scenarios.filter((scenario) => scenario.suitability === "분할 접근").length;
+
+  if (scenarios.every((scenario) => scenario.suitability === "데이터 부족")) {
+    return { entrySuitability: "데이터 부족", finalOpinionBase: "매수금지", riskRewardRatio: bestRatio };
+  }
+  if (bestRatio == null || bestRatio < 2) {
+    return { entrySuitability: "관망", finalOpinionBase: "관망", riskRewardRatio: bestRatio };
+  }
+  if ((score.riskScore ?? 100) >= 70 || volume.isHighAreaDistributionRisk) {
+    return { entrySuitability: "부적합", finalOpinionBase: "위험", riskRewardRatio: bestRatio };
+  }
+  if (suitableCount >= 2 && (score.technicalScore ?? 0) >= 70 && (score.volumeScore ?? 0) >= 55) {
+    return { entrySuitability: "적합", finalOpinionBase: "매수 가능", riskRewardRatio: bestRatio };
+  }
+  if (suitableCount >= 1 || splitCount >= 1) {
+    return { entrySuitability: "분할 접근", finalOpinionBase: "분할매수", riskRewardRatio: bestRatio };
+  }
+  return { entrySuitability: "관망", finalOpinionBase: "관망", riskRewardRatio: bestRatio };
+}
+
+export function calculateEntryPrices({
+  technical,
+  supportResistance,
+  volume,
+  score,
+  targetProfitRate,
+}: EntryPriceInput): EntryPriceResult {
+  const latest = technical.latest;
+  if (!latest) {
+    return {
+      conservativeBuyPrice: null,
+      neutralBuyPrice: null,
+      aggressiveBuyPrice: null,
+      stopLossPrice: null,
+      targetPrice1: null,
+      targetPrice2: null,
+      riskRewardRatio: null,
+      entrySuitability: "데이터 부족",
+      finalOpinionBase: "매수금지",
+      scenarios: [],
+      reasoning: ["매수가 산정에는 OHLCV와 기술 지표 데이터가 필요합니다."],
+      warningMessage: "데이터 부족: 손절가를 산출할 수 없어 매수 가능 의견을 제공하지 않습니다.",
+    };
+  }
+
+  const currentPrice = latest.close;
+  const atr = latest.atr14;
+  const support = supportResistance.primarySupport;
+  const resistance = supportResistance.primaryResistance;
+  const previousHigh = technical.previousHigh;
+  const previousLow = technical.previousLow;
+  const targetRate = Math.max(3, targetProfitRate) / 100;
+
+  const structuralStop = nearestBelow(currentPrice, [
+    support != null ? support * 0.985 : null,
+    previousLow != null ? previousLow * 0.985 : null,
+    latest.ma60 != null ? latest.ma60 * 0.97 : null,
+  ]);
+  const atrStop = atr != null ? currentPrice - atr * 1.5 : null;
+  const stopLossPrice = roundPrice(maxValid([structuralStop, atrStop]));
+
+  if (stopLossPrice == null || stopLossPrice >= currentPrice) {
+    return {
+      conservativeBuyPrice: null,
+      neutralBuyPrice: null,
+      aggressiveBuyPrice: null,
+      stopLossPrice: null,
+      targetPrice1: null,
+      targetPrice2: null,
+      riskRewardRatio: null,
+      entrySuitability: "데이터 부족",
+      finalOpinionBase: "매수금지",
+      scenarios: [],
+      reasoning: ["주요 지지선, ATR, 이동평균 기준으로 유효한 손절가를 산출하지 못했습니다."],
+      warningMessage: "손절가 산정 불가: 매수 가능 의견을 제공하지 않습니다.",
+    };
+  }
+
+  const conservativeBuyPrice = minValid([
+    support != null ? support * 1.01 : null,
+    latest.ma60,
+    latest.ma120,
+    currentPrice - (atr ?? currentPrice * 0.04),
+  ]);
+  const neutralBuyPrice = minValid([
+    latest.ma20 != null ? latest.ma20 * 1.005 : null,
+    previousHigh != null ? previousHigh * 0.97 : null,
+    currentPrice * 0.985,
+  ]);
+  const aggressiveBuyPrice = maxValid([
+    previousHigh != null ? previousHigh * 1.005 : null,
+    resistance != null ? resistance * 1.003 : null,
+    currentPrice,
+  ]);
+
+  const baseTarget1 = nearestAbove(currentPrice, [resistance, previousHigh, technical.high52Week]);
+  const targetPrice1 = roundPrice(maxValid([baseTarget1, currentPrice * (1 + targetRate * 0.5)]));
+  const targetPrice2 = roundPrice(maxValid([currentPrice * (1 + targetRate), resistance != null ? resistance * 1.05 : null]));
+
+  const scenarios = [
+    createScenario("보수적", conservativeBuyPrice, targetPrice1, stopLossPrice, score.riskScore, [
+      "주요 지지선, 60/120 이동평균, ATR 변동성을 반영했습니다.",
+      "손절폭을 줄이고 손익비가 유리한 구간을 우선합니다.",
+    ]),
+    createScenario("중립적", neutralBuyPrice, targetPrice1, stopLossPrice, score.riskScore, [
+      "20일선 눌림과 전고점 돌파 후 되돌림을 반영했습니다.",
+      "현재 추세가 유지된다는 가정의 기준 가격입니다.",
+    ]),
+    createScenario("공격적", aggressiveBuyPrice, targetPrice2, stopLossPrice, score.riskScore, [
+      "전고점 또는 저항선 돌파와 모멘텀 진입을 가정했습니다.",
+      "공격적 진입은 반드시 손절가를 함께 관리해야 합니다.",
+    ]),
+  ];
+  const decision = decideFinalOpinion(scenarios, score, volume);
+
+  const reasoning = [
+    support != null ? `주요 지지선: ${roundPrice(support)?.toLocaleString("ko-KR")}원` : "주요 지지선: 데이터 부족",
+    resistance != null ? `주요 저항선: ${roundPrice(resistance)?.toLocaleString("ko-KR")}원` : "주요 저항선: 데이터 부족",
+    atr != null ? `ATR14 기준 변동성: ${roundPrice(atr)?.toLocaleString("ko-KR")}원` : "ATR14: 데이터 부족",
+    decision.riskRewardRatio != null
+      ? `최고 손익비: 1:${decision.riskRewardRatio.toFixed(2)}`
+      : "손익비: 데이터 부족",
+  ];
+
+  if (decision.riskRewardRatio != null && decision.riskRewardRatio < 2) {
+    reasoning.push("손익비가 1:2 미만이므로 진입 부적합 또는 관망 기준입니다.");
+  }
+
+  return {
+    conservativeBuyPrice: scenarios[0].buyPrice,
+    neutralBuyPrice: scenarios[1].buyPrice,
+    aggressiveBuyPrice: scenarios[2].buyPrice,
+    stopLossPrice,
+    targetPrice1,
+    targetPrice2,
+    riskRewardRatio: decision.riskRewardRatio,
+    entrySuitability: decision.entrySuitability,
+    finalOpinionBase: decision.finalOpinionBase,
+    scenarios,
+    reasoning,
+    warningMessage:
+      decision.finalOpinionBase === "매수 가능" || decision.finalOpinionBase === "분할매수"
+        ? "룰 기반 참고 결과입니다. 최종 투자 판단과 책임은 사용자에게 있습니다."
+        : "손절가, 손익비, 리스크 조건상 관망 또는 진입 부적합 가능성이 있습니다.",
+  };
+}
