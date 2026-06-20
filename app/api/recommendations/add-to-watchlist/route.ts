@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { appendRow, getRows, GoogleSheetsConfigError } from "@/lib/googleSheets";
+import { appendRow, GoogleSheetsConfigError } from "@/lib/googleSheets";
 import { DEFAULT_TARGET_PROFIT_RATE } from "@/lib/constants";
 import { nowIso } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-
-type WatchlistRow = { stockCode?: string };
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,11 +13,6 @@ export async function POST(request: NextRequest) {
 
     if (!stockCode || !stockName) {
       return NextResponse.json({ ok: false, error: "종목코드와 종목명이 필요합니다." }, { status: 400 });
-    }
-
-    const existing = await getRows<WatchlistRow>("watchlist");
-    if (existing.some((row) => row.stockCode === stockCode)) {
-      return NextResponse.json({ ok: true, data: { stockCode, alreadyExists: true }, message: "이미 관심종목에 있습니다." });
     }
 
     const now = nowIso();

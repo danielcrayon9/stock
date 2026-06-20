@@ -133,9 +133,12 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
         }),
       });
       const payload = await response.json();
-      setStatus(payload.ok ? `${label} 완료` : `${label} 실패: ${payload.error ?? "오류"}`);
-    } catch {
-      setStatus(`${label} 실패: 네트워크 오류`);
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`);
+      }
+      setStatus(`${label} 완료`);
+    } catch (error) {
+      setStatus(`${label} 실패: ${error instanceof Error ? error.message : "네트워크 오류"}`);
     } finally {
       setPending(null);
     }
