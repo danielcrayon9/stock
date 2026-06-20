@@ -171,6 +171,69 @@ async function fetchKrxIndexConstituents(
 }
 
 // ---------------------------------------------------------------------------
+// Naver Finance 공식 KOSPI 200 구성종목 (KRX 차단 시 폴백)
+// ---------------------------------------------------------------------------
+
+const NAVER_KOSPI200_URL = "https://finance.naver.com/sise/entryJongmok.naver?type=KPI200";
+const NAVER_KOSPI200_PAGES = 20; // 페이지당 10종목 × 20 = 200종목
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
+async function fetchNaverPage(page: number): Promise<string> {
+  const response = await fetch(`${NAVER_KOSPI200_URL}&page=${page}`, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      Referer: "https://finance.naver.com/sise/",
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Naver 응답 오류 (${response.status})`);
+  }
+  const buffer = await response.arrayBuffer();
+  return new TextDecoder("euc-kr").decode(buffer);
+}
+
+async function fetchNaverKospi200(updatedAt: string): Promise<UniverseConstituent[]> {
+  const map = new Map<string, string>();
+  const pages = Array.from({ length: NAVER_KOSPI200_PAGES }, (_, i) => i + 1);
+
+  for (let i = 0; i < pages.length; i += 5) {
+    const batch = pages.slice(i, i + 5);
+    const htmls = await Promise.all(batch.map((page) => fetchNaverPage(page).catch(() => "")));
+    for (const html of htmls) {
+      const re = /\/item\/main\.naver\?code=(\d{6})" target="_parent">([^<]+)<\/a>/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(html)) != null) {
+        const code = match[1];
+        const name = decodeHtmlEntities(match[2]);
+        if (name && !map.has(code)) map.set(code, name);
+      }
+    }
+  }
+
+  return [...map.entries()].map(([stockCode, stockName]) => ({
+    id: stockCode,
+    stockCode,
+    stockName,
+    market: "KOSPI" as Market,
+    universeType: "KOSPI200" as UniverseType,
+    marketCap: null,
+    avgTradingValue20: null,
+    isActive: true,
+    updatedAt,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // 캐시 읽기
 // ---------------------------------------------------------------------------
 
@@ -307,6 +370,36 @@ export async function getUniverse(type: UniverseType): Promise<UniverseResult> {
 // 갱신 (KRX → 시드 폴백) + Google Sheets 캐싱
 // ---------------------------------------------------------------------------
 
+async function buildKospi200(updatedAt: string): Promise<{ list: UniverseConstituent[]; source: string }> {
+  // 1순위: KRX(시가총액 포함). 2순위: Naver(코스피200 공식 구성). 3순위: 시드.
+  try {
+    const krx = await fetchKrxIndexConstituents("KOSPI200", updatedAt);
+    if (krx.length >= 150) return { list: krx, source: "KRX" };
+  } catch {
+    // KRX 실패 시 Naver로 폴백
+  }
+  try {
+    const naver = await fetchNaverKospi200(updatedAt);
+    if (naver.length >= 150) return { list: naver, source: "Naver" };
+    if (naver.length > 0) return { list: naver, source: "Naver(부분)" };
+  } catch {
+    // Naver 실패 시 시드로 폴백
+  }
+  return { list: seedKospi(updatedAt), source: "시드" };
+}
+
+async function buildKosdaq150(updatedAt: string): Promise<{ list: UniverseConstituent[]; source: string }> {
+  // KOSDAQ 150 공식 목록은 KRX가 유일한 무료 소스이며, 차단 시 시드로 폴백한다.
+  try {
+    const krx = await fetchKrxIndexConstituents("KOSDAQ150", updatedAt);
+    if (krx.length >= 100) return { list: krx, source: "KRX" };
+    if (krx.length > 0) return { list: krx, source: "KRX(부분)" };
+  } catch {
+    // KRX 실패 시 시드로 폴백
+  }
+  return { list: seedKosdaq(updatedAt), source: "시드" };
+}
+
 export async function refreshUniverse(): Promise<{ count: number; source: string; message: string }> {
   if (!hasGoogleSheetsConfig()) {
     return { count: 0, source: "none", message: "Google Sheets 환경변수가 없어 유니버스를 캐싱할 수 없습니다." };
@@ -314,23 +407,18 @@ export async function refreshUniverse(): Promise<{ count: number; source: string
 
   const updatedAt = nowIso();
 
-  let kospi = await fetchKrxIndexConstituents("KOSPI200", updatedAt);
-  let kosdaq = await fetchKrxIndexConstituents("KOSDAQ150", updatedAt);
+  const [kospi, kosdaq] = await Promise.all([buildKospi200(updatedAt), buildKosdaq150(updatedAt)]);
 
-  const kospiSource = kospi.length > 0 ? "KRX" : "시드";
-  const kosdaqSource = kosdaq.length > 0 ? "KRX" : "시드";
-
-  if (kospi.length === 0) kospi = seedKospi(updatedAt);
-  if (kosdaq.length === 0) kosdaq = seedKosdaq(updatedAt);
-
-  const rows = [...kospi, ...kosdaq].map((c) => ({ ...c }));
+  const rows = [...kospi.list, ...kosdaq.list].map((c) => ({ ...c }));
   await overwriteRows("universe_constituents", rows);
 
-  const source = kospiSource === "KRX" && kosdaqSource === "KRX" ? "krx" : kospiSource === "시드" && kosdaqSource === "시드" ? "seed" : "mixed";
+  const usedSeed = kospi.source.includes("시드") || kosdaq.source.includes("시드");
+  const allOfficial = !kospi.source.includes("시드") && !kosdaq.source.includes("시드");
+  const source = allOfficial ? "official" : usedSeed ? "mixed" : "official";
 
   return {
     count: rows.length,
     source,
-    message: `KOSPI200 ${kospi.length}종목(${kospiSource}), KOSDAQ150 ${kosdaq.length}종목(${kosdaqSource})을 캐싱했습니다.`,
+    message: `KOSPI200 ${kospi.list.length}종목(${kospi.source}), KOSDAQ150 ${kosdaq.list.length}종목(${kosdaq.source})을 캐싱했습니다.`,
   };
 }
