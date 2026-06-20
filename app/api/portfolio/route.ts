@@ -17,6 +17,10 @@ function toOptionalNumber(value: unknown) {
   return Number.isFinite(number) ? number : null;
 }
 
+function toBoolean(value: unknown) {
+  return value === true || value === "true" || value === "TRUE" || value === "1";
+}
+
 function handleError(error: unknown) {
   const message = error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.";
   const status = error instanceof GoogleSheetsConfigError ? 503 : 500;
@@ -29,12 +33,16 @@ function createPortfolioPayload(body: Record<string, unknown>) {
   const targetProfitRate = toNumber(body.targetProfitRate, DEFAULT_TARGET_PROFIT_RATE);
   const stopLossRate = toNumber(body.stopLossRate, 8);
   const currentPrice = toOptionalNumber(body.currentPrice);
+  const brokerId = String(body.brokerId ?? "").trim();
+  const applySellFee = toBoolean(body.applySellFee);
   const calculated = calculatePortfolioValues({
     avgBuyPrice,
     quantity,
     targetProfitRate,
     stopLossRate,
     currentPrice,
+    brokerId,
+    applySellFee,
   });
 
   return {

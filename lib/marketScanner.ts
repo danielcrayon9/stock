@@ -11,7 +11,9 @@ import { getDisclosures } from "@/lib/dartService";
 import { getFinancialAnalysis } from "@/lib/financialAnalysis";
 import { getNews } from "@/lib/newsService";
 import { aggregateOhlcv } from "@/lib/ohlcv";
+import { runDailyBacktest } from "@/lib/dailyBacktest";
 import { analyzeTechnical } from "@/lib/technicalAnalysis";
+import { projectTradeCosts } from "@/lib/tradingCost";
 import {
   appendRow,
   appendRows,
@@ -125,6 +127,7 @@ function buildResultRow(
   analysis: StockRuleAnalysis,
   enrichment: EnrichmentData,
   ai: AiJudgeResult | null,
+  targetProfitRate: number,
 ): ScanResultRow {
   const totalScore = computeTotalScore(analysis, enrichment);
   const exclusionReason = evaluateHardExclusion(analysis, enrichment, totalScore);
@@ -135,6 +138,18 @@ function buildResultRow(
     ? "제외"
     : ai?.finalOpinion ?? entry.finalOpinionBase;
   const riskLevel = ai?.riskLevel ?? riskLevelFromScore(analysis.score.riskScore);
+  const neutralBuyPrice = ai?.neutralBuyPrice ?? entry.neutralBuyPrice;
+  const stopLossPrice = ai?.stopLossPrice ?? entry.stopLossPrice;
+  const targetPrice1 = ai?.targetPrice1 ?? entry.targetPrice1;
+  const costProjection = projectTradeCosts({
+    entryPrice: neutralBuyPrice,
+    targetPrice: targetPrice1,
+    stopLossPrice,
+  });
+  const backtest =
+    analysis.status === "ok"
+      ? runDailyBacktest({ points: analysis.technical.points, targetProfitRate })
+      : null;
 
   return {
     id: crypto.randomUUID(),
@@ -154,12 +169,29 @@ function buildResultRow(
     riskScore: analysis.score.riskScore,
     totalScore,
     conservativeBuyPrice: ai?.conservativeBuyPrice ?? entry.conservativeBuyPrice,
-    neutralBuyPrice: ai?.neutralBuyPrice ?? entry.neutralBuyPrice,
+    neutralBuyPrice,
     aggressiveBuyPrice: ai?.aggressiveBuyPrice ?? entry.aggressiveBuyPrice,
-    stopLossPrice: ai?.stopLossPrice ?? entry.stopLossPrice,
-    targetPrice1: ai?.targetPrice1 ?? entry.targetPrice1,
+    stopLossPrice,
+    targetPrice1,
     targetPrice2: ai?.targetPrice2 ?? entry.targetPrice2,
     riskRewardRatio: ai?.riskRewardRatio ?? entry.riskRewardRatio,
+    grossProfitRate: costProjection.grossProfitRate,
+    grossLossRate: costProjection.grossLossRate,
+    netProfitRate: costProjection.netProfitRate,
+    netLossRate: costProjection.netLossRate,
+    netRiskRewardRatio: costProjection.netRiskRewardRatio,
+    breakEvenRate: costProjection.breakEvenRate,
+    totalTradingCostRate: costProjection.totalRoundTripCostRate,
+    costDescription: costProjection.costDescription,
+    backtestTrades: backtest?.trades ?? null,
+    backtestWinRate: backtest?.winRate ?? null,
+    backtestAverageNetReturn: backtest?.averageNetReturn ?? null,
+    backtestExpectancy: backtest?.expectancy ?? null,
+    backtestMaxDrawdown: backtest?.maxDrawdown ?? null,
+    backtestTargetHitRate: backtest?.targetHitRate ?? null,
+    backtestStopHitRate: backtest?.stopHitRate ?? null,
+    backtestAverageHoldingDays: backtest?.averageHoldingDays ?? null,
+    backtestSummary: backtest?.summary ?? "백테스트 데이터 부족",
     finalOpinion,
     recommendationType,
     riskLevel,
@@ -187,6 +219,13 @@ function toRecommendations(scanRunId: string, results: ScanResultRow[]): Recomme
       targetPrice1: row.targetPrice1,
       targetPrice2: row.targetPrice2,
       totalScore: row.totalScore,
+      netProfitRate: row.netProfitRate,
+      netLossRate: row.netLossRate,
+      netRiskRewardRatio: row.netRiskRewardRatio,
+      backtestTrades: row.backtestTrades,
+      backtestWinRate: row.backtestWinRate,
+      backtestAverageNetReturn: row.backtestAverageNetReturn,
+      backtestMaxDrawdown: row.backtestMaxDrawdown,
       riskLevel: row.riskLevel,
       summary: row.summary,
       createdAt,
@@ -285,6 +324,7 @@ export async function runMarketScan(filters: ScanFilters, options: RunOptions = 
       analysis,
       enrichmentMap.get(analysis.stock.stockCode) ?? EMPTY_ENRICHMENT,
       aiMap.get(analysis.stock.stockCode) ?? null,
+      filters.targetProfitRate,
     ),
   );
   results.sort((left, right) => (right.totalScore ?? 0) - (left.totalScore ?? 0));

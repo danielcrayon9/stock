@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatEok, formatKRW, formatPercent, formatRatio, formatScore } from "@/lib/formatters";
+import { formatEok, formatKRW, formatPercent, formatRatio, formatScore, formatSignedPercent } from "@/lib/formatters";
+import { netReturnRate } from "@/lib/tradingCost";
 import type { ScanResultRow } from "@/lib/types";
 
 type RecommendationCardProps = {
@@ -65,10 +66,9 @@ function profitRate(entryPrice: number | null, targetPrice: number | null) {
   return ((targetPrice - entryPrice) / entryPrice) * 100;
 }
 
-function signedPercent(value: number | null) {
-  if (value == null) return "계산 불가";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(2)}%`;
+function netProfitRate(entryPrice: number | null, exitPrice: number | null) {
+  if (entryPrice == null || exitPrice == null) return null;
+  return netReturnRate(entryPrice, exitPrice);
 }
 
 function ChangeRate({ value }: { value: number | null }) {
@@ -76,7 +76,7 @@ function ChangeRate({ value }: { value: number | null }) {
   const marker = value > 0 ? "▲" : value < 0 ? "▼" : "";
   return (
     <span className="inline-flex items-center gap-1">
-      {marker ? <span className="text-[0.35em] leading-none">{marker}</span> : null}
+      {marker ? <span className="text-[0.55em] leading-none" style={{ fontSize: "0.55em" }}>{marker}</span> : null}
       {formatPercent(value)}
     </span>
   );
@@ -105,6 +105,8 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
     result.currentPrice > result.neutralBuyPrice * 1.03;
   const expectedProfitRate = profitRate(entryPrice.value, targetPrice.value);
   const expectedStopRate = profitRate(entryPrice.value, stopPrice.value);
+  const expectedNetProfitRate = netProfitRate(entryPrice.value, targetPrice.value);
+  const expectedNetStopRate = netProfitRate(entryPrice.value, stopPrice.value);
 
   function selectPrice(role: PriceRole, label: string, value: number | null) {
     if (value == null) return;
@@ -201,6 +203,14 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
             <span className="text-sm font-bold text-slate-900">{formatRatio(result.riskRewardRatio)}</span>
           </div>
           <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">비용 차감 순손익비</span>
+            <span className="text-sm font-bold text-slate-900">{formatRatio(result.netRiskRewardRatio)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">기준 매수가 순수익</span>
+            <span className="text-sm font-bold text-slate-900">{formatSignedPercent(result.netProfitRate)}</span>
+          </div>
+          <div className="flex items-center justify-between">
             <span className="text-sm text-slate-500">최종 의견</span>
             <span className="text-sm font-bold text-slate-900">{result.finalOpinion || "데이터 부족"}</span>
           </div>
@@ -223,6 +233,30 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
         </div>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-xl border border-slate-100 bg-white p-3">
+          <p className="text-xs text-slate-500">백테스트 체결</p>
+          <p className="mt-1 text-lg font-black text-slate-950">
+            {result.backtestTrades == null ? "데이터 부족" : `${result.backtestTrades}회`}
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-white p-3">
+          <p className="text-xs text-slate-500">백테스트 승률</p>
+          <p className="mt-1 text-lg font-black text-slate-950">{formatPercent(result.backtestWinRate)}</p>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-white p-3">
+          <p className="text-xs text-slate-500">평균 순수익률</p>
+          <p className="mt-1 text-lg font-black text-slate-950">{formatSignedPercent(result.backtestAverageNetReturn)}</p>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-white p-3">
+          <p className="text-xs text-slate-500">최대낙폭</p>
+          <p className="mt-1 text-lg font-black text-slate-950">{formatSignedPercent(result.backtestMaxDrawdown)}</p>
+        </div>
+      </div>
+      <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs leading-5 text-slate-600">
+        {result.backtestSummary || "백테스트 데이터 부족"} · 비용 가정: {result.costDescription || "기본 국내주식 비용 모델"}
+      </p>
+
       <div className="rounded-xl border border-slate-100 bg-white p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-bold text-slate-950">수익률 계산기</p>
@@ -238,13 +272,15 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
             <p className="text-xs text-emerald-700">선택 목표가</p>
             <p className="mt-1 text-sm font-semibold text-emerald-900">{targetPrice.label}</p>
             <p className="text-lg font-black text-emerald-700">{formatKRW(targetPrice.value)}</p>
-            <p className="text-xs font-bold text-emerald-700">예상 수익률 {signedPercent(expectedProfitRate)}</p>
+            <p className="text-xs font-bold text-emerald-700">총수익률 {formatSignedPercent(expectedProfitRate)}</p>
+            <p className="text-xs font-bold text-emerald-700">순수익률 {formatSignedPercent(expectedNetProfitRate)}</p>
           </div>
           <div className="rounded-lg bg-red-50 p-3">
             <p className="text-xs text-red-700">선택 손절가</p>
             <p className="mt-1 text-sm font-semibold text-red-900">{stopPrice.label}</p>
             <p className="text-lg font-black text-red-600">{formatKRW(stopPrice.value)}</p>
-            <p className="text-xs font-bold text-red-700">손절 시 손익률 {signedPercent(expectedStopRate)}</p>
+            <p className="text-xs font-bold text-red-700">손절 총손익률 {formatSignedPercent(expectedStopRate)}</p>
+            <p className="text-xs font-bold text-red-700">손절 순손익률 {formatSignedPercent(expectedNetStopRate)}</p>
           </div>
         </div>
       </div>

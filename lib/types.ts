@@ -252,6 +252,10 @@ export type AiJudgePayload = {
 
 export type StockPriceQuote = Stock & {
   currentPrice: number | null;
+  regularMarketPrice: number | null;
+  beforeMarketPrice: number | null;
+  afterMarketPrice: number | null;
+  priceSession: "정규장" | "장전" | "장후" | "데이터 부족";
   changeAmount: number | null;
   changeRate: number | null;
   previousClose: number | null;
@@ -401,6 +405,23 @@ export type ScanResultRow = {
   targetPrice1: number | null;
   targetPrice2: number | null;
   riskRewardRatio: number | null;
+  grossProfitRate: number | null;
+  grossLossRate: number | null;
+  netProfitRate: number | null;
+  netLossRate: number | null;
+  netRiskRewardRatio: number | null;
+  breakEvenRate: number | null;
+  totalTradingCostRate: number | null;
+  costDescription: string;
+  backtestTrades: number | null;
+  backtestWinRate: number | null;
+  backtestAverageNetReturn: number | null;
+  backtestExpectancy: number | null;
+  backtestMaxDrawdown: number | null;
+  backtestTargetHitRate: number | null;
+  backtestStopHitRate: number | null;
+  backtestAverageHoldingDays: number | null;
+  backtestSummary: string;
   finalOpinion: string;
   recommendationType: RecommendationType;
   riskLevel: string;
@@ -422,6 +443,13 @@ export type RecommendedCandidate = {
   targetPrice1: number | null;
   targetPrice2: number | null;
   totalScore: number | null;
+  netProfitRate: number | null;
+  netLossRate: number | null;
+  netRiskRewardRatio: number | null;
+  backtestTrades: number | null;
+  backtestWinRate: number | null;
+  backtestAverageNetReturn: number | null;
+  backtestMaxDrawdown: number | null;
   riskLevel: string;
   summary: string;
   createdAt: string;

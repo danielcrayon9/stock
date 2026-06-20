@@ -1,8 +1,10 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { BROKER_FEES, DEFAULT_BROKER_ID, type BrokerId } from "@/lib/brokerFees";
 import { formatKRW, formatPercent } from "@/lib/formatters";
 import { calculatePortfolioValues } from "@/lib/portfolioMath";
+import type { Stock } from "@/lib/types";
 import TargetProfitSlider from "./TargetProfitSlider";
 import { Button } from "./ui/button";
 
@@ -13,6 +15,11 @@ export type PortfolioRow = {
   buyDate: string;
   avgBuyPrice: string | number;
   quantity: string | number;
+  brokerId?: string;
+  brokerName?: string;
+  applySellFee?: string | boolean;
+  sellCommissionRate?: string | number;
+  sellCommissionAmount?: string | number;
   investedAmount: string | number;
   targetProfitRate: string | number;
   stopLossRate: string | number;
@@ -31,6 +38,8 @@ type PortfolioForm = {
   buyDate: string;
   avgBuyPrice: number;
   quantity: number;
+  brokerId: BrokerId;
+  applySellFee: boolean;
   targetProfitRate: number;
   stopLossRate: number;
   currentPrice: number | "";
@@ -44,6 +53,8 @@ const emptyForm: PortfolioForm = {
   buyDate: "",
   avgBuyPrice: 0,
   quantity: 0,
+  brokerId: DEFAULT_BROKER_ID,
+  applySellFee: false,
   targetProfitRate: 20,
   stopLossRate: 8,
   currentPrice: "",
@@ -61,6 +72,15 @@ function toNullableNumber(value: unknown) {
   return Number.isFinite(number) ? number : null;
 }
 
+function toBoolean(value: unknown) {
+  return value === true || value === "true" || value === "TRUE" || value === "1";
+}
+
+function normalizeBrokerId(value: unknown): BrokerId {
+  const id = String(value ?? "");
+  return BROKER_FEES.some((broker) => broker.id === id) ? (id as BrokerId) : DEFAULT_BROKER_ID;
+}
+
 type PortfolioTableProps = {
   initialRows: PortfolioRow[];
   initialMessage?: string;
@@ -71,6 +91,7 @@ export default function PortfolioTable({ initialRows, initialMessage = "" }: Por
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(initialMessage);
+  const [stockLookupMessage, setStockLookupMessage] = useState("");
 
   const preview = calculatePortfolioValues({
     avgBuyPrice: toNumber(form.avgBuyPrice),
@@ -78,7 +99,56 @@ export default function PortfolioTable({ initialRows, initialMessage = "" }: Por
     targetProfitRate: form.targetProfitRate,
     stopLossRate: form.stopLossRate,
     currentPrice: toNullableNumber(form.currentPrice),
+    brokerId: form.brokerId,
+    applySellFee: form.applySellFee,
   });
+
+  useEffect(() => {
+    const query = form.stockName.trim();
+    if (query.length < 2) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/stocks/search?query=${encodeURIComponent(query)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error);
+
+        const matches = (result.data ?? []) as Stock[];
+        const match =
+          matches.find((stock) => stock.stockName === query || stock.stockName.replace(/\(샘플\)$/, "") === query) ??
+          matches[0];
+
+        if (!match) {
+          setStockLookupMessage("일치하는 종목코드를 찾지 못했습니다.");
+          return;
+        }
+
+        setForm((prev) => {
+          if (prev.stockName.trim() !== query) return prev;
+          return {
+            ...prev,
+            stockCode: match.stockCode,
+            stockName: prev.stockName || match.stockName,
+          };
+        });
+        setStockLookupMessage(`${match.stockName} · ${match.stockCode} 자동 입력`);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setStockLookupMessage("종목코드 자동 조회에 실패했습니다.");
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [form.stockName]);
 
   async function loadRows() {
     setLoading(true);
@@ -146,7 +216,11 @@ export default function PortfolioTable({ initialRows, initialMessage = "" }: Por
         </label>
         <label className="grid gap-1 text-sm font-semibold text-slate-700">
           종목명
-          <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-normal" value={form.stockName} onChange={(event) => setForm((prev) => ({ ...prev, stockName: event.target.value }))} placeholder="삼성전자" required />
+          <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-normal" value={form.stockName} onChange={(event) => {
+            setStockLookupMessage("");
+            setForm((prev) => ({ ...prev, stockName: event.target.value }));
+          }} placeholder="삼성전자" required />
+          {stockLookupMessage ? <span className="text-xs font-normal text-slate-500">{stockLookupMessage}</span> : null}
         </label>
         <label className="grid gap-1 text-sm font-semibold text-slate-700">
           매수일
@@ -163,6 +237,29 @@ export default function PortfolioTable({ initialRows, initialMessage = "" }: Por
         <label className="grid gap-1 text-sm font-semibold text-slate-700">
           현재가
           <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-normal" type="number" value={form.currentPrice} onChange={(event) => setForm((prev) => ({ ...prev, currentPrice: event.target.value === "" ? "" : Number(event.target.value) }))} placeholder="없으면 비워두기" />
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          증권사
+          <select
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-normal"
+            value={form.brokerId}
+            onChange={(event) => setForm((prev) => ({ ...prev, brokerId: normalizeBrokerId(event.target.value) }))}
+          >
+            {BROKER_FEES.map((broker) => (
+              <option key={broker.id} value={broker.id}>
+                {broker.name} · 매도 {(broker.sellCommissionRate * 100).toFixed(3)}%
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+          <input
+            type="checkbox"
+            checked={form.applySellFee}
+            onChange={(event) => setForm((prev) => ({ ...prev, applySellFee: event.target.checked }))}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          매도 시 증권사 수수료 차감
         </label>
         <div className="lg:col-span-2">
           <TargetProfitSlider value={form.targetProfitRate} onChange={(value) => setForm((prev) => ({ ...prev, targetProfitRate: value }))} />
@@ -187,6 +284,11 @@ export default function PortfolioTable({ initialRows, initialMessage = "" }: Por
           <div className="rounded-xl bg-white p-3 text-sm">
             <p className="text-slate-500">손절가</p>
             <p className="font-black">{formatKRW(preview.stopLossPrice)}</p>
+          </div>
+          <div className="rounded-xl bg-white p-3 text-sm">
+            <p className="text-slate-500">매도 수수료</p>
+            <p className="font-black">{preview.applySellFee ? formatKRW(preview.sellCommissionAmount) : "미적용"}</p>
+            <p className="text-xs text-slate-400">{preview.brokerName} {(preview.sellCommissionRate * 100).toFixed(3)}%</p>
           </div>
         </div>
         <div className="flex gap-2 lg:col-span-3">
@@ -217,13 +319,28 @@ export default function PortfolioTable({ initialRows, initialMessage = "" }: Por
               const currentPrice = toNullableNumber(row.currentPrice);
               const profitAmount = toNullableNumber(row.profitAmount);
               const profitRate = toNullableNumber(row.profitRate);
+              const sellCommissionAmount = toNullableNumber(row.sellCommissionAmount);
+              const applySellFee = toBoolean(row.applySellFee);
               return (
                 <tr key={row.id}>
                   <td className="px-4 py-3"><div className="font-bold text-slate-950">{row.stockName}</div><div className="text-xs text-slate-500">{row.stockCode}</div></td>
                   <td className="px-4 py-3">{formatKRW(toNumber(row.avgBuyPrice))} / {row.quantity}주</td>
                   <td className="px-4 py-3">{formatKRW(toNumber(row.investedAmount))}</td>
                   <td className="px-4 py-3">{currentPrice == null ? "현재가 없음" : formatKRW(currentPrice)}</td>
-                  <td className="px-4 py-3">{profitAmount == null || profitRate == null ? "현재가 없음" : `${formatKRW(profitAmount)} (${formatPercent(profitRate)})`}</td>
+                  <td className="px-4 py-3">
+                    {profitAmount == null || profitRate == null ? (
+                      "현재가 없음"
+                    ) : (
+                      <div>
+                        <div>{formatKRW(profitAmount)} ({formatPercent(profitRate)})</div>
+                        {applySellFee ? (
+                          <div className="text-xs text-slate-500">
+                            {row.brokerName || "증권사"} 매도수수료 {formatKRW(sellCommissionAmount)}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">{formatKRW(toNumber(row.targetPrice))} / {formatKRW(toNumber(row.stopLossPrice))}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
@@ -234,6 +351,8 @@ export default function PortfolioTable({ initialRows, initialMessage = "" }: Por
                         buyDate: row.buyDate,
                         avgBuyPrice: toNumber(row.avgBuyPrice),
                         quantity: toNumber(row.quantity),
+                        brokerId: normalizeBrokerId(row.brokerId),
+                        applySellFee: toBoolean(row.applySellFee),
                         targetProfitRate: toNumber(row.targetProfitRate),
                         stopLossRate: toNumber(row.stopLossRate),
                         currentPrice: currentPrice ?? "",

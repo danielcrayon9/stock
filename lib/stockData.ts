@@ -10,6 +10,10 @@ import {
 type YahooChartResult = {
   meta?: {
     regularMarketPrice?: number;
+    preMarketPrice?: number;
+    preMarketTime?: number;
+    postMarketPrice?: number;
+    postMarketTime?: number;
     chartPreviousClose?: number;
     regularMarketTime?: number;
     currency?: string;
@@ -75,6 +79,48 @@ async function fetchYahooChart(stock: Stock, range = "10y") {
   }
 
   return result;
+}
+
+function validPrice(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function pickDisplayPrice(meta: YahooChartResult["meta"]) {
+  const regularMarketPrice = validPrice(meta?.regularMarketPrice);
+  const beforeMarketPrice = validPrice(meta?.preMarketPrice);
+  const afterMarketPrice = validPrice(meta?.postMarketPrice);
+  const candidates = [
+    {
+      price: afterMarketPrice,
+      session: "장후" as const,
+      time: meta?.postMarketTime ?? 0,
+    },
+    {
+      price: beforeMarketPrice,
+      session: "장전" as const,
+      time: meta?.preMarketTime ?? 0,
+    },
+    {
+      price: regularMarketPrice,
+      session: "정규장" as const,
+      time: meta?.regularMarketTime ?? 0,
+    },
+  ]
+    .filter((item) => item.price != null)
+    .sort((left, right) => right.time - left.time);
+
+  const selected = candidates[0] ?? null;
+  return {
+    currentPrice: selected?.price ?? null,
+    priceSession: selected?.session ?? ("데이터 부족" as const),
+    regularMarketPrice,
+    beforeMarketPrice,
+    afterMarketPrice,
+    updatedAt:
+      selected?.time != null && selected.time > 0
+        ? new Date(selected.time * 1000).toISOString()
+        : null,
+  };
 }
 
 function mapYahooDailyPoints(result: YahooChartResult): OhlcvPoint[] {
@@ -154,7 +200,14 @@ export async function getStockPrice(stockCode: string, market?: Market): Promise
   try {
     const result = await fetchYahooChart(stock, "5d");
     const meta = result.meta;
-    const currentPrice = meta?.regularMarketPrice ?? null;
+    const {
+      currentPrice,
+      priceSession,
+      regularMarketPrice,
+      beforeMarketPrice,
+      afterMarketPrice,
+      updatedAt,
+    } = pickDisplayPrice(meta);
     const previousClose = meta?.chartPreviousClose ?? null;
     const changeAmount =
       currentPrice != null && previousClose != null ? currentPrice - previousClose : null;
@@ -167,6 +220,10 @@ export async function getStockPrice(stockCode: string, market?: Market): Promise
       return {
         ...stock,
         currentPrice: null,
+        regularMarketPrice,
+        beforeMarketPrice,
+        afterMarketPrice,
+        priceSession: "데이터 부족",
         changeAmount: null,
         changeRate: null,
         previousClose: null,
@@ -179,19 +236,25 @@ export async function getStockPrice(stockCode: string, market?: Market): Promise
     return {
       ...stock,
       currentPrice,
+      regularMarketPrice,
+      beforeMarketPrice,
+      afterMarketPrice,
+      priceSession,
       changeAmount,
       changeRate,
       previousClose,
-      updatedAt: meta?.regularMarketTime
-        ? new Date(meta.regularMarketTime * 1000).toISOString()
-        : new Date().toISOString(),
+      updatedAt: updatedAt ?? new Date().toISOString(),
       status: "ready",
-      message: "Yahoo Finance chart API 기준 현재가입니다.",
+      message: `Yahoo Finance chart API 기준 ${priceSession} 가격입니다.`,
     };
   } catch {
     return {
       ...stock,
       currentPrice: null,
+      regularMarketPrice: null,
+      beforeMarketPrice: null,
+      afterMarketPrice: null,
+      priceSession: "데이터 부족",
       changeAmount: null,
       changeRate: null,
       previousClose: null,

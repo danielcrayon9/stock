@@ -16,6 +16,7 @@ import { formatKRW, formatPercent } from "@/lib/formatters";
 import { scoreAnalysis } from "@/lib/scoringEngine";
 import { findSupportResistance } from "@/lib/supportResistance";
 import { analyzeTechnical } from "@/lib/technicalAnalysis";
+import { kstDateString, kstParts } from "@/lib/time";
 import type {
   AiJudgeResult,
   DisclosureResult,
@@ -34,6 +35,29 @@ const PERIOD_LABELS: Record<OhlcvPeriod, string> = {
   monthly: "월봉",
   yearly: "년봉",
 };
+
+function PriceDetail({ label, value }: { label: string; value: number | null | undefined }) {
+  return (
+    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-xs font-semibold text-slate-500">{label}</span>
+      <span className="text-sm font-bold text-slate-900">{formatKRW(value)}</span>
+    </div>
+  );
+}
+
+function isAfterMarketEndedToday(priceQuote: StockPriceQuote | null) {
+  if (!priceQuote?.updatedAt || priceQuote.priceSession !== "장후") return false;
+  const now = new Date();
+  const { hour, minute } = kstParts(now);
+  const minutes = hour * 60 + minute;
+  return kstDateString(new Date(priceQuote.updatedAt)) === kstDateString(now) && minutes >= 18 * 60;
+}
+
+function priceToneClass(priceQuote: StockPriceQuote | null) {
+  if (isAfterMarketEndedToday(priceQuote)) return "text-slate-950";
+  if (priceQuote?.changeRate == null || priceQuote.changeRate === 0) return "text-slate-950";
+  return priceQuote.changeRate > 0 ? "text-red-600" : "text-blue-600";
+}
 
 export default function AnalyzeWorkspace() {
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
@@ -56,6 +80,7 @@ export default function AnalyzeWorkspace() {
   const technical = useMemo(() => analyzeTechnical(ohlcvPoints, PERIOD_LABELS[period]), [ohlcvPoints, period]);
   const volume = useMemo(() => analyzeVolume(ohlcvPoints), [ohlcvPoints]);
   const supportResistance = useMemo(() => findSupportResistance(ohlcvPoints), [ohlcvPoints]);
+  const currentPriceTone = priceToneClass(priceQuote);
   const baseScore = useMemo(
     () => scoreAnalysis(technical, volume, supportResistance),
     [technical, volume, supportResistance],
@@ -347,7 +372,14 @@ export default function AnalyzeWorkspace() {
               <p className="text-sm text-slate-500">현재가를 불러오는 중입니다.</p>
             ) : (
               <div className="space-y-2">
-                <p className="text-3xl font-black text-slate-950">{formatKRW(priceQuote?.currentPrice)}</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <p className={`text-3xl font-black ${currentPriceTone}`}>{formatKRW(priceQuote?.currentPrice)}</p>
+                  {priceQuote?.priceSession && priceQuote.priceSession !== "데이터 부족" ? (
+                    <span className="mb-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">
+                      {priceQuote.priceSession} 반영
+                    </span>
+                  ) : null}
+                </div>
                 <p
                   className={`text-sm font-semibold ${
                     (priceQuote?.changeRate ?? 0) >= 0 ? "text-red-600" : "text-blue-600"
@@ -356,12 +388,17 @@ export default function AnalyzeWorkspace() {
                   {priceQuote?.changeAmount != null ? formatKRW(priceQuote.changeAmount) : "데이터 부족"}{" "}
                   {priceQuote?.changeRate != null ? (
                     <span className="inline-flex items-center gap-1">
-                      {priceQuote.changeRate > 0 ? <span className="text-[0.35em] leading-none">▲</span> : null}
-                      {priceQuote.changeRate < 0 ? <span className="text-[0.35em] leading-none">▼</span> : null}
+                      {priceQuote.changeRate > 0 ? <span className="text-[0.55em] leading-none" style={{ fontSize: "0.55em" }}>▲</span> : null}
+                      {priceQuote.changeRate < 0 ? <span className="text-[0.55em] leading-none" style={{ fontSize: "0.55em" }}>▼</span> : null}
                       <span>({formatPercent(priceQuote.changeRate)})</span>
                     </span>
                   ) : null}
                 </p>
+                <div className="grid gap-2 pt-1">
+                  <PriceDetail label="정규장 가격" value={priceQuote?.regularMarketPrice} />
+                  <PriceDetail label="장전 가격" value={priceQuote?.beforeMarketPrice} />
+                  <PriceDetail label="장후 가격" value={priceQuote?.afterMarketPrice} />
+                </div>
                 <p className="text-xs text-slate-500">{priceQuote?.message ?? "시세 데이터 연결 필요"}</p>
               </div>
             )}

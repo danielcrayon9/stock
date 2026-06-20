@@ -8,6 +8,12 @@ export function formatPercent(value: number | null | undefined) {
   return `${value.toFixed(2)}%`;
 }
 
+export function formatSignedPercent(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return "데이터 부족";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
 export function formatEok(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) return "데이터 부족";
   const eok = value / 100_000_000;

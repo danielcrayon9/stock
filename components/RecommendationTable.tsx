@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import RecommendationCard from "@/components/RecommendationCard";
 import { RECOMMENDATION_TYPES } from "@/lib/constants";
-import { formatPercent, formatRatio, formatScore } from "@/lib/formatters";
+import { formatPercent, formatRatio, formatScore, formatSignedPercent } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import type { RecommendationType, ScanResultRow } from "@/lib/types";
 
@@ -14,7 +14,7 @@ type RecommendationTableProps = {
 };
 
 type Tab = "전체" | RecommendationType;
-type SortKey = "currentPrice" | "changeRate" | "totalScore" | "riskRewardRatio";
+type SortKey = "currentPrice" | "changeRate" | "totalScore" | "riskRewardRatio" | "netProfitRate" | "backtestWinRate";
 type SortDirection = "asc" | "desc";
 
 const TABS: Tab[] = ["전체", ...RECOMMENDATION_TYPES];
@@ -23,6 +23,8 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
   { key: "changeRate", label: "등락률" },
   { key: "totalScore", label: "종합" },
   { key: "riskRewardRatio", label: "손익비" },
+  { key: "netProfitRate", label: "순수익" },
+  { key: "backtestWinRate", label: "백테스트" },
 ];
 
 const TYPE_BADGE: Record<RecommendationType, string> = {
@@ -59,7 +61,7 @@ function ChangeRate({ value, className }: { value: number | null; className?: st
         className,
       )}
     >
-      {marker ? <span className="text-[0.35em] leading-none">{marker}</span> : null}
+      {marker ? <span className="text-[0.55em] leading-none" style={{ fontSize: "0.55em" }}>{marker}</span> : null}
       {formatPercent(value)}
     </span>
   );
@@ -102,8 +104,10 @@ function topPickScore(row: ScanResultRow) {
   }
   const totalScore = row.totalScore ?? 0;
   const riskRewardScore = Math.min((row.riskRewardRatio ?? 0) * 4, 28);
+  const netProfitBonus = Math.max(-10, Math.min(row.netProfitRate ?? 0, 12));
+  const backtestBonus = row.backtestWinRate != null ? Math.max(-8, Math.min((row.backtestWinRate - 50) / 2, 12)) : 0;
   const riskPenalty = RISK_PENALTY[row.riskLevel] ?? 8;
-  return totalScore + riskRewardScore + buyZoneScore(row) + TYPE_TOP_PICK_BONUS[row.recommendationType] - riskPenalty;
+  return totalScore + riskRewardScore + netProfitBonus + backtestBonus + buyZoneScore(row) + TYPE_TOP_PICK_BONUS[row.recommendationType] - riskPenalty;
 }
 
 export default function RecommendationTable({ results }: RecommendationTableProps) {
@@ -163,6 +167,16 @@ export default function RecommendationTable({ results }: RecommendationTableProp
     }));
   }
 
+  function openAndScrollToResult(rowId: string) {
+    setExpandedId(rowId);
+    window.setTimeout(() => {
+      const targetId = window.matchMedia("(min-width: 768px)").matches
+        ? `recommendation-desktop-${rowId}`
+        : `recommendation-mobile-${rowId}`;
+      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
+
   function sortLabel(key: SortKey) {
     if (sort.key !== key) return "";
     return sort.direction === "desc" ? " ↓" : " ↑";
@@ -185,14 +199,14 @@ export default function RecommendationTable({ results }: RecommendationTableProp
               <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">Top Picks</p>
               <h3 className="text-lg font-black text-slate-950">현재 매수 접근성 Top 3</h3>
             </div>
-            <p className="text-xs text-slate-500">종합점수, 손익비, 기준 매수가 근접도, 리스크를 함께 반영했습니다.</p>
+            <p className="text-xs text-slate-500">종합점수, 손익비, 순수익률, 백테스트, 기준 매수가 근접도, 리스크를 함께 반영했습니다.</p>
           </div>
           <div className="grid gap-3 lg:grid-cols-3">
             {topPicks.map((row, index) => (
               <button
                 key={row.id}
                 type="button"
-                onClick={() => setExpandedId((current) => (current === row.id ? null : row.id))}
+                onClick={() => openAndScrollToResult(row.id)}
                 className="rounded-2xl border border-emerald-100 bg-white p-4 text-left shadow-sm transition-colors hover:border-emerald-300"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -212,7 +226,8 @@ export default function RecommendationTable({ results }: RecommendationTableProp
                 <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
                   <MobileMetric label="현재가" value={<span className="text-base font-black">{formatPriceNumber(row.currentPrice)}</span>} />
                   <MobileMetric label="종합" value={formatScore(row.totalScore)} />
-                  <MobileMetric label="손익비" value={formatRatio(row.riskRewardRatio)} />
+                  <MobileMetric label="순손익비" value={formatRatio(row.netRiskRewardRatio ?? row.riskRewardRatio)} />
+                  <MobileMetric label="순수익" value={formatSignedPercent(row.netProfitRate)} />
                   <MobileMetric label="의견" value={row.finalOpinion || "-"} />
                 </div>
               </button>
@@ -259,7 +274,7 @@ export default function RecommendationTable({ results }: RecommendationTableProp
         {filtered.map((row) => {
           const expanded = expandedId === row.id;
           return (
-            <article key={row.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <article id={`recommendation-mobile-${row.id}`} key={row.id} className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <button
                 type="button"
                 onClick={() => setExpandedId(expanded ? null : row.id)}
@@ -282,7 +297,8 @@ export default function RecommendationTable({ results }: RecommendationTableProp
                 <MobileMetric label="현재가" value={<span className="text-base font-black">{formatPriceNumber(row.currentPrice)}</span>} />
                 <MobileMetric label="등락률" value={<ChangeRate value={row.changeRate} />} />
                 <MobileMetric label="종합" value={formatScore(row.totalScore)} />
-                <MobileMetric label="손익비" value={formatRatio(row.riskRewardRatio)} />
+                <MobileMetric label="순수익" value={formatSignedPercent(row.netProfitRate)} />
+                <MobileMetric label="백테스트" value={row.backtestTrades ? `${formatPercent(row.backtestWinRate)} · ${row.backtestTrades}회` : "데이터 부족"} />
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -334,6 +350,16 @@ export default function RecommendationTable({ results }: RecommendationTableProp
                   손익비{sortLabel("riskRewardRatio")}
                 </button>
               </th>
+              <th className="px-3 py-3 text-right">
+                <button type="button" onClick={() => toggleSort("netProfitRate")} className="font-bold hover:text-slate-700">
+                  순수익{sortLabel("netProfitRate")}
+                </button>
+              </th>
+              <th className="px-3 py-3 text-right">
+                <button type="button" onClick={() => toggleSort("backtestWinRate")} className="font-bold hover:text-slate-700">
+                  백테스트{sortLabel("backtestWinRate")}
+                </button>
+              </th>
               <th className="px-3 py-3">추천 유형</th>
               <th className="px-3 py-3">의견</th>
               <th className="px-3 py-3">리스크</th>
@@ -346,6 +372,7 @@ export default function RecommendationTable({ results }: RecommendationTableProp
               return (
                 <Fragment key={row.id}>
                   <tr
+                    id={`recommendation-desktop-${row.id}`}
                     className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
                     onClick={() => setExpandedId(expanded ? null : row.id)}
                   >
@@ -360,7 +387,11 @@ export default function RecommendationTable({ results }: RecommendationTableProp
                       <ChangeRate value={row.changeRate} />
                     </td>
                     <td className="px-3 py-3 text-right font-bold text-slate-900">{formatScore(row.totalScore)}</td>
-                    <td className="px-3 py-3 text-right text-slate-700">{formatRatio(row.riskRewardRatio)}</td>
+                    <td className="px-3 py-3 text-right text-slate-700">{formatRatio(row.netRiskRewardRatio ?? row.riskRewardRatio)}</td>
+                    <td className="px-3 py-3 text-right font-bold text-slate-900">{formatSignedPercent(row.netProfitRate)}</td>
+                    <td className="px-3 py-3 text-right text-slate-700">
+                      {row.backtestTrades ? `${formatPercent(row.backtestWinRate)} · ${row.backtestTrades}회` : "데이터 부족"}
+                    </td>
                     <td className="px-3 py-3">
                       <span className={`rounded-full px-2 py-1 text-xs font-bold ${TYPE_BADGE[row.recommendationType]}`}>
                         {row.recommendationType}
@@ -374,7 +405,7 @@ export default function RecommendationTable({ results }: RecommendationTableProp
                   </tr>
                   {expanded ? (
                     <tr className="border-b border-slate-100 bg-slate-50">
-                      <td colSpan={11} className="px-3 py-4">
+                      <td colSpan={13} className="px-3 py-4">
                         <RecommendationCard result={row} />
                       </td>
                     </tr>

@@ -57,6 +57,10 @@ export function getSamplePrice(stockCode: string) {
   return {
     ...stock,
     currentPrice: latest.close,
+    regularMarketPrice: latest.close,
+    beforeMarketPrice: null,
+    afterMarketPrice: null,
+    priceSession: "정규장" as const,
     changeAmount,
     changeRate,
     previousClose: previous?.close ?? null,

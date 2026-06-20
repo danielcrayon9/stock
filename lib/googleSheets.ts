@@ -143,11 +143,32 @@ async function getRawRows(sheetName: string) {
   return (response.data.values ?? []) as string[][];
 }
 
+async function ensureConfiguredHeaders(
+  sheetName: string,
+  currentHeaders: string[],
+  configuredHeaders: readonly string[] | undefined,
+) {
+  if (!configuredHeaders || currentHeaders.length === 0) return currentHeaders;
+  const missing = configuredHeaders.filter((header) => !currentHeaders.includes(header));
+  if (missing.length === 0) return currentHeaders;
+
+  const { spreadsheetId } = getGoogleSheetsConfig();
+  const sheets = await getSheetsClient();
+  const nextHeaders = [...currentHeaders, ...missing];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [nextHeaders] },
+  });
+  return nextHeaders;
+}
+
 export async function getRows<T = SheetRow>(sheetName: string): Promise<T[]> {
   await ensureSheetExists(sheetName);
   const rows = await getRawRows(sheetName);
-  const headers = rows[0] ?? [];
   const configuredHeaders = SHEET_COLUMNS[sheetName as keyof typeof SHEET_COLUMNS];
+  let headers = rows[0] ?? [];
 
   if (headers.length === 0 && configuredHeaders) {
     const { spreadsheetId } = getGoogleSheetsConfig();
@@ -162,6 +183,7 @@ export async function getRows<T = SheetRow>(sheetName: string): Promise<T[]> {
   }
 
   if (headers.length === 0) return [];
+  headers = await ensureConfiguredHeaders(sheetName, headers, configuredHeaders);
 
   return rows.slice(1).filter((row) => row.length > 0).map((row) => rowToObject(headers, row) as T);
 }
@@ -177,7 +199,7 @@ export async function appendRow(sheetName: string, row: SheetRow) {
   await ensureSheetExists(sheetName);
   const rawRows = await getRawRows(sheetName);
   const configuredHeaders = SHEET_COLUMNS[sheetName as keyof typeof SHEET_COLUMNS];
-  const headers = rawRows[0] ?? configuredHeaders ?? Object.keys(row);
+  let headers = rawRows[0] ?? (configuredHeaders ? [...configuredHeaders] : Object.keys(row));
 
   if (rawRows.length === 0) {
     await sheets.spreadsheets.values.update({
@@ -186,6 +208,8 @@ export async function appendRow(sheetName: string, row: SheetRow) {
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [headers] },
     });
+  } else {
+    headers = await ensureConfiguredHeaders(sheetName, headers, configuredHeaders);
   }
 
   await sheets.spreadsheets.values.append({
@@ -208,7 +232,7 @@ export async function appendRows(sheetName: string, rows: SheetRow[]) {
   await ensureSheetExists(sheetName);
   const rawRows = await getRawRows(sheetName);
   const configuredHeaders = SHEET_COLUMNS[sheetName as keyof typeof SHEET_COLUMNS];
-  const headers = rawRows[0] ?? configuredHeaders ?? Object.keys(rows[0]);
+  let headers = rawRows[0] ?? (configuredHeaders ? [...configuredHeaders] : Object.keys(rows[0]));
 
   if (rawRows.length === 0) {
     await sheets.spreadsheets.values.update({
@@ -217,6 +241,8 @@ export async function appendRows(sheetName: string, rows: SheetRow[]) {
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [[...headers]] },
     });
+  } else {
+    headers = await ensureConfiguredHeaders(sheetName, headers, configuredHeaders);
   }
 
   await sheets.spreadsheets.values.append({
