@@ -1,5 +1,5 @@
 export const DISCLAIMER =
-  "본 서비스의 모든 분석은 투자 판단 보조용이며 매수·매도 추천이 아닙니다. 데이터는 지연되거나 누락될 수 있으며, 최종 투자 판단과 책임은 사용자에게 있습니다.";
+  "본 분석은 투자 판단 보조용이며 매수·매도 추천이 아닙니다. 데이터는 지연되거나 누락될 수 있으며, 최종 투자 판단과 책임은 사용자에게 있습니다. 이 시스템은 자동매매 및 실제 주문 기능을 제공하지 않습니다.";
 
 export const REQUIRED_ENV_KEYS = [
   "GOOGLE_CLIENT_EMAIL",
@@ -20,6 +20,19 @@ export const OPTIONAL_ENV_KEYS = [
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_CHAT_ID",
   "CRON_SECRET",
+  "BROKER_PROVIDER",
+  "KIS_MODE",
+  "ENABLE_ORDER",
+  "READ_ONLY_MODE",
+  "KIS_APP_KEY",
+  "KIS_APP_SECRET",
+  "KIS_ACCOUNT_NO",
+  "KIS_APPROVAL_KEY",
+  "KIWOOM_APP_KEY",
+  "REALTIME_WORKER_URL",
+  "WORKER_API_SECRET",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
 ] as const;
 
 export const SHEET_NAMES = [

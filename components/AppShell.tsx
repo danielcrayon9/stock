@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
+import { assertReadOnlySafety } from "@/lib/safetyGuard";
 import Disclaimer from "./Disclaimer";
 import Navigation from "./Navigation";
 
 export default function AppShell({ children }: { children: ReactNode }) {
+  assertReadOnlySafety();
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white p-5 lg:block">
