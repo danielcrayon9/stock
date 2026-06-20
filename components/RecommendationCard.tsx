@@ -26,26 +26,82 @@ function ScoreItem({ label, value }: { label: string; value: number | null }) {
   );
 }
 
-function PriceItem({ label, value, tone }: { label: string; value: number | null; tone?: "buy" | "stop" | "target" }) {
+type PriceRole = "entry" | "stop" | "target";
+
+type SelectedPrice = {
+  label: string;
+  value: number | null;
+};
+
+function PriceItem({
+  label,
+  value,
+  tone,
+  onSelect,
+}: {
+  label: string;
+  value: number | null;
+  tone?: "buy" | "stop" | "target";
+  onSelect: () => void;
+}) {
   const toneClass =
     tone === "stop" ? "text-red-600" : tone === "target" ? "text-emerald-600" : "text-slate-900";
   return (
-    <div className="flex items-center justify-between border-b border-slate-100 py-1.5 last:border-b-0">
+    <button
+      type="button"
+      disabled={value == null}
+      onClick={onSelect}
+      className="flex w-full items-center justify-between border-b border-slate-100 py-1.5 text-left transition-colors last:border-b-0 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      title={value == null ? "계산할 가격 데이터가 없습니다." : `${label}를 계산기에 입력`}
+    >
       <span className="text-sm text-slate-500">{label}</span>
       <span className={`text-sm font-semibold ${toneClass}`}>{formatKRW(value)}</span>
-    </div>
+    </button>
   );
+}
+
+function profitRate(entryPrice: number | null, targetPrice: number | null) {
+  if (entryPrice == null || targetPrice == null || entryPrice <= 0) return null;
+  return ((targetPrice - entryPrice) / entryPrice) * 100;
+}
+
+function signedPercent(value: number | null) {
+  if (value == null) return "계산 불가";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
 }
 
 export default function RecommendationCard({ result }: RecommendationCardProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [entryPrice, setEntryPrice] = useState<SelectedPrice>({
+    label: "중립적 매수가",
+    value: result.neutralBuyPrice ?? result.currentPrice,
+  });
+  const [targetPrice, setTargetPrice] = useState<SelectedPrice>({
+    label: "1차 목표가",
+    value: result.targetPrice1,
+  });
+  const [stopPrice, setStopPrice] = useState<SelectedPrice>({
+    label: "손절가",
+    value: result.stopLossPrice,
+  });
 
   const isExcluded = result.recommendationType === "제외 후보";
   const isChaseRisk =
     result.currentPrice != null &&
     result.neutralBuyPrice != null &&
     result.currentPrice > result.neutralBuyPrice * 1.03;
+  const expectedProfitRate = profitRate(entryPrice.value, targetPrice.value);
+  const expectedStopRate = profitRate(entryPrice.value, stopPrice.value);
+
+  function selectPrice(role: PriceRole, label: string, value: number | null) {
+    if (value == null) return;
+    const selected = { label, value };
+    if (role === "entry") setEntryPrice(selected);
+    if (role === "target") setTargetPrice(selected);
+    if (role === "stop") setStopPrice(selected);
+  }
 
   async function post(endpoint: string, label: string) {
     setPending(endpoint);
@@ -86,12 +142,42 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-100 bg-white p-3">
           <p className="mb-2 text-sm font-bold text-slate-950">매수가 / 목표가</p>
-          <PriceItem label="보수적 매수가" value={result.conservativeBuyPrice} tone="buy" />
-          <PriceItem label="중립적 매수가" value={result.neutralBuyPrice} tone="buy" />
-          <PriceItem label="공격적 매수가" value={result.aggressiveBuyPrice} tone="buy" />
-          <PriceItem label="손절가" value={result.stopLossPrice} tone="stop" />
-          <PriceItem label="1차 목표가" value={result.targetPrice1} tone="target" />
-          <PriceItem label="2차 목표가" value={result.targetPrice2} tone="target" />
+          <PriceItem
+            label="보수적 매수가"
+            value={result.conservativeBuyPrice}
+            tone="buy"
+            onSelect={() => selectPrice("entry", "보수적 매수가", result.conservativeBuyPrice)}
+          />
+          <PriceItem
+            label="중립적 매수가"
+            value={result.neutralBuyPrice}
+            tone="buy"
+            onSelect={() => selectPrice("entry", "중립적 매수가", result.neutralBuyPrice)}
+          />
+          <PriceItem
+            label="공격적 매수가"
+            value={result.aggressiveBuyPrice}
+            tone="buy"
+            onSelect={() => selectPrice("entry", "공격적 매수가", result.aggressiveBuyPrice)}
+          />
+          <PriceItem
+            label="손절가"
+            value={result.stopLossPrice}
+            tone="stop"
+            onSelect={() => selectPrice("stop", "손절가", result.stopLossPrice)}
+          />
+          <PriceItem
+            label="1차 목표가"
+            value={result.targetPrice1}
+            tone="target"
+            onSelect={() => selectPrice("target", "1차 목표가", result.targetPrice1)}
+          />
+          <PriceItem
+            label="2차 목표가"
+            value={result.targetPrice2}
+            tone="target"
+            onSelect={() => selectPrice("target", "2차 목표가", result.targetPrice2)}
+          />
         </div>
 
         <div className="space-y-2 rounded-xl border border-slate-100 bg-white p-3">
@@ -120,6 +206,32 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
           <div className="flex items-center justify-between">
             <span className="text-sm text-slate-500">거래대금</span>
             <span className="text-sm font-semibold text-slate-900">{formatEok(result.tradingValue)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-100 bg-white p-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-bold text-slate-950">수익률 계산기</p>
+          <p className="text-xs text-slate-500">매수가·목표가·손절가를 클릭하면 자동 계산됩니다.</p>
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-xs text-slate-500">선택 매수가</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{entryPrice.label}</p>
+            <p className="text-lg font-black text-slate-950">{formatKRW(entryPrice.value)}</p>
+          </div>
+          <div className="rounded-lg bg-emerald-50 p-3">
+            <p className="text-xs text-emerald-700">선택 목표가</p>
+            <p className="mt-1 text-sm font-semibold text-emerald-900">{targetPrice.label}</p>
+            <p className="text-lg font-black text-emerald-700">{formatKRW(targetPrice.value)}</p>
+            <p className="text-xs font-bold text-emerald-700">예상 수익률 {signedPercent(expectedProfitRate)}</p>
+          </div>
+          <div className="rounded-lg bg-red-50 p-3">
+            <p className="text-xs text-red-700">선택 손절가</p>
+            <p className="mt-1 text-sm font-semibold text-red-900">{stopPrice.label}</p>
+            <p className="text-lg font-black text-red-600">{formatKRW(stopPrice.value)}</p>
+            <p className="text-xs font-bold text-red-700">손절 시 손익률 {signedPercent(expectedStopRate)}</p>
           </div>
         </div>
       </div>
