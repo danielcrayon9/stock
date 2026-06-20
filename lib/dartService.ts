@@ -1,4 +1,5 @@
 import { inflateRawSync } from "node:zlib";
+import dartCorpCodes from "@/config/dartCorpCodes.json";
 import { appendRow, hasGoogleSheetsConfig } from "@/lib/googleSheets";
 import { classifyDisclosure, calculateDisclosureScore } from "@/lib/disclosureAnalysis";
 import { nowIso } from "@/lib/utils";
@@ -46,6 +47,7 @@ type CorpCodeInfo = {
   stockCode: string;
 };
 
+const STATIC_CORP_CODES = dartCorpCodes as Record<string, { corpCode: string; stockName: string }>;
 const DART_BASE_URL = "https://opendart.fss.or.kr/api";
 let corpCodeMapPromise: Promise<Map<string, CorpCodeInfo>> | null = null;
 const DART_TIMEOUT_MS = 15_000;
@@ -194,6 +196,16 @@ async function getCorpCodeMap() {
 
 export async function getCorpInfo(stockCode: string) {
   const normalizedCode = stockCode.trim();
+  const staticCorp = STATIC_CORP_CODES[normalizedCode];
+  if (staticCorp?.corpCode) {
+    const payload = await requestDart<DartCompanyResponse>("company.json", { corp_code: staticCorp.corpCode });
+    return {
+      corpCode: staticCorp.corpCode,
+      stockName: payload.status === "000" ? payload.corp_name || staticCorp.stockName : staticCorp.stockName,
+      stockCode: payload.status === "000" ? payload.stock_code || normalizedCode : normalizedCode,
+    };
+  }
+
   const map = await getCorpCodeMap();
   const corp = map.get(normalizedCode);
   if (!corp) {
