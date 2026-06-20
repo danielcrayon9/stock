@@ -1,10 +1,6 @@
 export function formatKRW(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) return "데이터 부족";
-  return new Intl.NumberFormat("ko-KR", {
-    style: "currency",
-    currency: "KRW",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value)}원`;
 }
 
 export function formatPercent(value: number | null | undefined) {
