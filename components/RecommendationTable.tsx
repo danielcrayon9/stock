@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import RecommendationCard from "@/components/RecommendationCard";
 import { RECOMMENDATION_TYPES } from "@/lib/constants";
@@ -23,6 +24,29 @@ const TYPE_BADGE: Record<RecommendationType, string> = {
   "돌파 관심 후보": "bg-violet-100 text-violet-700",
   "제외 후보": "bg-slate-200 text-slate-600",
 };
+
+function ChangeRate({ value, className }: { value: number | null; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "font-semibold",
+        (value ?? 0) > 0 ? "text-red-600" : (value ?? 0) < 0 ? "text-blue-600" : "text-slate-500",
+        className,
+      )}
+    >
+      {formatPercent(value)}
+    </span>
+  );
+}
+
+function MobileMetric({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-xs font-semibold text-slate-500">{label}</p>
+      <div className="mt-1 text-sm font-bold text-slate-950">{value}</div>
+    </div>
+  );
+}
 
 export default function RecommendationTable({ results }: RecommendationTableProps) {
   const [tab, setTab] = useState<Tab>("전체");
@@ -76,7 +100,59 @@ export default function RecommendationTable({ results }: RecommendationTableProp
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <div className="space-y-3 md:hidden">
+        {filtered.map((row) => {
+          const expanded = expandedId === row.id;
+          return (
+            <article key={row.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setExpandedId(expanded ? null : row.id)}
+                className="flex w-full items-start justify-between gap-3 text-left"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-slate-950 px-2 py-0.5 text-xs font-bold text-white">
+                      #{rankMap.get(row.id)}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">{row.market}</span>
+                  </div>
+                  <p className="mt-2 truncate text-base font-black text-slate-950">{row.stockName}</p>
+                  <p className="text-xs text-slate-400">{row.stockCode}</p>
+                </div>
+                <ChevronDown className={cn("mt-1 h-5 w-5 shrink-0 text-slate-400 transition-transform", expanded && "rotate-180")} />
+              </button>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <MobileMetric label="현재가" value={formatKRW(row.currentPrice)} />
+                <MobileMetric label="등락률" value={<ChangeRate value={row.changeRate} />} />
+                <MobileMetric label="종합" value={formatScore(row.totalScore)} />
+                <MobileMetric label="손익비" value={formatRatio(row.riskRewardRatio)} />
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2 py-1 text-xs font-bold ${TYPE_BADGE[row.recommendationType]}`}>
+                  {row.recommendationType}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                  의견 {row.finalOpinion || "-"}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                  리스크 {row.riskLevel || "-"}
+                </span>
+              </div>
+
+              {expanded ? (
+                <div className="mt-4">
+                  <RecommendationCard result={row} />
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="hidden rounded-2xl border border-slate-200 bg-white md:block">
         <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-400">
@@ -109,13 +185,8 @@ export default function RecommendationTable({ results }: RecommendationTableProp
                     </td>
                     <td className="px-3 py-3 text-slate-500">{row.market}</td>
                     <td className="px-3 py-3 text-right text-slate-900">{formatKRW(row.currentPrice)}</td>
-                    <td
-                      className={cn(
-                        "px-3 py-3 text-right font-semibold",
-                        (row.changeRate ?? 0) > 0 ? "text-red-600" : (row.changeRate ?? 0) < 0 ? "text-blue-600" : "text-slate-500",
-                      )}
-                    >
-                      {formatPercent(row.changeRate)}
+                    <td className="px-3 py-3 text-right">
+                      <ChangeRate value={row.changeRate} />
                     </td>
                     <td className="px-3 py-3 text-right font-bold text-slate-900">{formatScore(row.totalScore)}</td>
                     <td className="px-3 py-3 text-right text-slate-700">{formatRatio(row.riskRewardRatio)}</td>
