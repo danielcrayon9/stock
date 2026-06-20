@@ -48,6 +48,7 @@ type CorpCodeInfo = {
 
 const DART_BASE_URL = "https://opendart.fss.or.kr/api";
 let corpCodeMapPromise: Promise<Map<string, CorpCodeInfo>> | null = null;
+const DART_TIMEOUT_MS = 15_000;
 
 function getDartApiKey() {
   return process.env.OPENDART_API_KEY?.trim();
@@ -71,7 +72,7 @@ async function requestDart<T>(path: string, params: Record<string, string>) {
   }
 
   const query = new URLSearchParams({ crtfc_key: apiKey, ...params });
-  const response = await fetch(`${DART_BASE_URL}/${path}?${query.toString()}`, {
+  const response = await fetchWithTimeout(`${DART_BASE_URL}/${path}?${query.toString()}`, DART_TIMEOUT_MS, {
     next: { revalidate: 3600 },
   });
 
@@ -82,35 +83,66 @@ async function requestDart<T>(path: string, params: Record<string, string>) {
   return (await response.json()) as T;
 }
 
+async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestInit) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function extractFirstXmlValue(xml: string, tag: string) {
   const match = xml.match(new RegExp(`<${tag}>\\s*([^<]*)\\s*</${tag}>`));
   return match?.[1]?.trim() ?? "";
 }
 
 function unzipFirstXml(buffer: Buffer) {
-  let offset = 0;
-  while (offset + 30 < buffer.length) {
-    const signature = buffer.readUInt32LE(offset);
-    if (signature !== 0x04034b50) break;
+  const eocdSignature = 0x06054b50;
+  let eocdOffset = -1;
+  for (let index = buffer.length - 22; index >= 0; index -= 1) {
+    if (buffer.readUInt32LE(index) === eocdSignature) {
+      eocdOffset = index;
+      break;
+    }
+  }
+  if (eocdOffset === -1) throw new Error("OpenDART corpCode ZIP 중앙 디렉터리를 찾지 못했습니다.");
 
-    const compressionMethod = buffer.readUInt16LE(offset + 8);
-    const compressedSize = buffer.readUInt32LE(offset + 18);
-    const fileNameLength = buffer.readUInt16LE(offset + 26);
-    const extraLength = buffer.readUInt16LE(offset + 28);
-    const fileNameStart = offset + 30;
-    const dataStart = fileNameStart + fileNameLength + extraLength;
-    const dataEnd = dataStart + compressedSize;
+  const entryCount = buffer.readUInt16LE(eocdOffset + 10);
+  let centralOffset = buffer.readUInt32LE(eocdOffset + 16);
+
+  for (let entry = 0; entry < entryCount; entry += 1) {
+    if (buffer.readUInt32LE(centralOffset) !== 0x02014b50) {
+      throw new Error("OpenDART corpCode ZIP 중앙 디렉터리 형식이 올바르지 않습니다.");
+    }
+
+    const compressionMethod = buffer.readUInt16LE(centralOffset + 10);
+    const compressedSize = buffer.readUInt32LE(centralOffset + 20);
+    const fileNameLength = buffer.readUInt16LE(centralOffset + 28);
+    const extraLength = buffer.readUInt16LE(centralOffset + 30);
+    const commentLength = buffer.readUInt16LE(centralOffset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(centralOffset + 42);
+    const fileNameStart = centralOffset + 46;
     const fileName = buffer.subarray(fileNameStart, fileNameStart + fileNameLength).toString("utf8");
-    const compressed = buffer.subarray(dataStart, dataEnd);
 
     if (fileName.toLowerCase().endsWith(".xml")) {
+      if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+        throw new Error("OpenDART corpCode ZIP 로컬 헤더 형식이 올바르지 않습니다.");
+      }
+      const localFileNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+      const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
+      const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
+
       if (compressionMethod === 0) return compressed.toString("utf8");
       if (compressionMethod === 8) return inflateRawSync(compressed).toString("utf8");
       throw new Error(`지원하지 않는 OpenDART ZIP 압축 방식입니다. (${compressionMethod})`);
     }
 
-    offset = dataEnd;
+    centralOffset += 46 + fileNameLength + extraLength + commentLength;
   }
+
   throw new Error("OpenDART corpCode ZIP에서 XML 파일을 찾지 못했습니다.");
 }
 
@@ -139,9 +171,11 @@ async function getCorpCodeMap() {
     const apiKey = getDartApiKey();
     if (!apiKey) throw new Error("OpenDART API 키가 설정되지 않았습니다.");
 
-    const response = await fetch(`${DART_BASE_URL}/corpCode.xml?${new URLSearchParams({ crtfc_key: apiKey })}`, {
-      next: { revalidate: 60 * 60 * 24 },
-    });
+    const response = await fetchWithTimeout(
+      `${DART_BASE_URL}/corpCode.xml?${new URLSearchParams({ crtfc_key: apiKey })}`,
+      DART_TIMEOUT_MS,
+      { next: { revalidate: 60 * 60 * 24 } },
+    );
     if (!response.ok) {
       throw new Error(`OpenDART 기업 고유번호 목록 응답 오류 (${response.status})`);
     }
