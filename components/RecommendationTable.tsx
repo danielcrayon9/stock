@@ -14,8 +14,16 @@ type RecommendationTableProps = {
 };
 
 type Tab = "전체" | RecommendationType;
+type SortKey = "currentPrice" | "changeRate" | "totalScore" | "riskRewardRatio";
+type SortDirection = "asc" | "desc";
 
 const TABS: Tab[] = ["전체", ...RECOMMENDATION_TYPES];
+const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
+  { key: "currentPrice", label: "현재가" },
+  { key: "changeRate", label: "등락률" },
+  { key: "totalScore", label: "종합" },
+  { key: "riskRewardRatio", label: "손익비" },
+];
 
 const TYPE_BADGE: Record<RecommendationType, string> = {
   "즉시 관심 후보": "bg-emerald-100 text-emerald-700",
@@ -48,9 +56,17 @@ function MobileMetric({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+function sortValue(row: ScanResultRow, key: SortKey) {
+  return row[key];
+}
+
 export default function RecommendationTable({ results }: RecommendationTableProps) {
   const [tab, setTab] = useState<Tab>("전체");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: "totalScore",
+    direction: "desc",
+  });
 
   const rankMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -71,8 +87,29 @@ export default function RecommendationTable({ results }: RecommendationTableProp
 
   const filtered = useMemo(() => {
     const list = tab === "전체" ? results : results.filter((row) => row.recommendationType === tab);
-    return [...list].sort((left, right) => (right.totalScore ?? 0) - (left.totalScore ?? 0));
-  }, [results, tab]);
+    return [...list].sort((left, right) => {
+      const leftValue = sortValue(left, sort.key);
+      const rightValue = sortValue(right, sort.key);
+      if (leftValue == null && rightValue == null) return (right.totalScore ?? 0) - (left.totalScore ?? 0);
+      if (leftValue == null) return 1;
+      if (rightValue == null) return -1;
+      const diff = leftValue - rightValue;
+      if (diff === 0) return (right.totalScore ?? 0) - (left.totalScore ?? 0);
+      return sort.direction === "asc" ? diff : -diff;
+    });
+  }, [results, tab, sort]);
+
+  function toggleSort(key: SortKey) {
+    setSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
+    }));
+  }
+
+  function sortLabel(key: SortKey) {
+    if (sort.key !== key) return "";
+    return sort.direction === "desc" ? " ↓" : " ↑";
+  }
 
   if (results.length === 0) {
     return (
@@ -96,6 +133,24 @@ export default function RecommendationTable({ results }: RecommendationTableProp
             )}
           >
             {item} {counts.get(item) ?? 0}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 md:hidden">
+        <span className="text-xs font-semibold text-slate-500">정렬</span>
+        {SORT_OPTIONS.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => toggleSort(option.key)}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-xs font-bold transition-colors",
+              sort.key === option.key ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+            )}
+          >
+            {option.label}
+            {sortLabel(option.key)}
           </button>
         ))}
       </div>
@@ -159,10 +214,26 @@ export default function RecommendationTable({ results }: RecommendationTableProp
               <th className="px-3 py-3">순위</th>
               <th className="px-3 py-3">종목</th>
               <th className="px-3 py-3">시장</th>
-              <th className="px-3 py-3 text-right">현재가</th>
-              <th className="px-3 py-3 text-right">등락률</th>
-              <th className="px-3 py-3 text-right">종합</th>
-              <th className="px-3 py-3 text-right">손익비</th>
+              <th className="px-3 py-3 text-right">
+                <button type="button" onClick={() => toggleSort("currentPrice")} className="font-bold hover:text-slate-700">
+                  현재가{sortLabel("currentPrice")}
+                </button>
+              </th>
+              <th className="px-3 py-3 text-right">
+                <button type="button" onClick={() => toggleSort("changeRate")} className="font-bold hover:text-slate-700">
+                  등락률{sortLabel("changeRate")}
+                </button>
+              </th>
+              <th className="px-3 py-3 text-right">
+                <button type="button" onClick={() => toggleSort("totalScore")} className="font-bold hover:text-slate-700">
+                  종합{sortLabel("totalScore")}
+                </button>
+              </th>
+              <th className="px-3 py-3 text-right">
+                <button type="button" onClick={() => toggleSort("riskRewardRatio")} className="font-bold hover:text-slate-700">
+                  손익비{sortLabel("riskRewardRatio")}
+                </button>
+              </th>
               <th className="px-3 py-3">추천 유형</th>
               <th className="px-3 py-3">의견</th>
               <th className="px-3 py-3">리스크</th>
