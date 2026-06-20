@@ -5,8 +5,7 @@ export function formatKRW(value: number | null | undefined) {
 
 export function formatPercent(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) return "데이터 부족";
-  const marker = value > 0 ? "▲ " : value < 0 ? "▼ " : "";
-  return `${marker}${value.toFixed(2)}%`;
+  return `${value.toFixed(2)}%`;
 }
 
 export function formatEok(value: number | null | undefined) {

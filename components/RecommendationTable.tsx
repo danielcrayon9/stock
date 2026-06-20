@@ -34,14 +34,16 @@ const TYPE_BADGE: Record<RecommendationType, string> = {
 };
 
 function ChangeRate({ value, className }: { value: number | null; className?: string }) {
+  const marker = value == null ? "" : value > 0 ? "▲" : value < 0 ? "▼" : "";
   return (
     <span
       className={cn(
-        "font-semibold",
+        "inline-flex items-center gap-1 font-semibold",
         (value ?? 0) > 0 ? "text-red-600" : (value ?? 0) < 0 ? "text-blue-600" : "text-slate-500",
         className,
       )}
     >
+      {marker ? <span className="text-[0.35em] leading-none">{marker}</span> : null}
       {formatPercent(value)}
     </span>
   );

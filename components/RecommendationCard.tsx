@@ -71,6 +71,17 @@ function signedPercent(value: number | null) {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+function ChangeRate({ value }: { value: number | null }) {
+  if (value == null) return <span>데이터 부족</span>;
+  const marker = value > 0 ? "▲" : value < 0 ? "▼" : "";
+  return (
+    <span className="inline-flex items-center gap-1">
+      {marker ? <span className="text-[0.35em] leading-none">{marker}</span> : null}
+      {formatPercent(value)}
+    </span>
+  );
+}
+
 export default function RecommendationCard({ result }: RecommendationCardProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -201,7 +212,9 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-slate-500">등락률</span>
-            <span className="text-sm font-semibold text-slate-900">{formatPercent(result.changeRate)}</span>
+            <span className="text-sm font-semibold text-slate-900">
+              <ChangeRate value={result.changeRate} />
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-slate-500">거래대금</span>

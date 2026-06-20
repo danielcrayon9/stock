@@ -354,7 +354,13 @@ export default function AnalyzeWorkspace() {
                   }`}
                 >
                   {priceQuote?.changeAmount != null ? formatKRW(priceQuote.changeAmount) : "데이터 부족"}{" "}
-                  {priceQuote?.changeRate != null ? `(${formatPercent(priceQuote.changeRate)})` : ""}
+                  {priceQuote?.changeRate != null ? (
+                    <span className="inline-flex items-center gap-1">
+                      {priceQuote.changeRate > 0 ? <span className="text-[0.35em] leading-none">▲</span> : null}
+                      {priceQuote.changeRate < 0 ? <span className="text-[0.35em] leading-none">▼</span> : null}
+                      <span>({formatPercent(priceQuote.changeRate)})</span>
+                    </span>
+                  ) : null}
                 </p>
                 <p className="text-xs text-slate-500">{priceQuote?.message ?? "시세 데이터 연결 필요"}</p>
               </div>
