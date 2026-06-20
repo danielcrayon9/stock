@@ -3,12 +3,19 @@ description: Automatically commit and push code changes to GitHub
 alwaysApply: true
 ---
 
-# Auto-commit to GitHub
+# Auto-run and Auto-commit
 
 After completing any code/file change in this project, automatically stage,
 commit, and push to GitHub without waiting for the user to ask.
 
+When verification or operational commands are useful, run them automatically
+without asking the user for confirmation first.
+
 ## Workflow
+- Run relevant commands proactively: `npm run lint`, `npm run build`, Vercel
+  deploys, health checks, and targeted API checks.
+- Do not ask "실행할까요?" for ordinary development commands; run them and report
+  the result.
 - Stage the changed files, commit with a clear message, then `git push origin HEAD:main`.
 - Group a logical unit of work into one commit (don't commit half-finished states).
 - Run this after the change builds/lints cleanly when a build/lint step is relevant.
@@ -27,3 +34,6 @@ git push origin HEAD:main
 - Never commit secrets. `.env.local` is gitignored — keep it that way.
 - Never `git push --force` to main, never change git config, never skip hooks.
 - If a commit/push fails, surface the error instead of retrying destructively.
+- If Cursor/Vercel/GitHub presents a platform-level approval or login prompt,
+  do not bypass it; explain what approval is needed and continue after it is
+  granted.
