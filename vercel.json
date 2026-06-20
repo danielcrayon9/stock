@@ -1,20 +1,12 @@
 {
   "crons": [
     {
+      "path": "/api/scanner/cron",
+      "schedule": "0 7 * * *"
+    },
+    {
       "path": "/api/alerts/check",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/scanner/cron",
-      "schedule": "0 23 * * *"
-    },
-    {
-      "path": "/api/scanner/cron",
-      "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/scanner/cron",
-      "schedule": "10 6 * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }
