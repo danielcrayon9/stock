@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Radar, RefreshCw, RotateCcw } from "lucide-react";
+import { Database, Radar, RefreshCw, RotateCcw } from "lucide-react";
 import RecommendationTable from "@/components/RecommendationTable";
 import ScanProgress from "@/components/ScanProgress";
 import ScannerFilters, { type ScannerFilterValue } from "@/components/ScannerFilters";
@@ -22,6 +22,22 @@ type MarketScannerFormProps = {
   initial: ScanRunResponse | null;
 };
 
+type UniverseInfo = {
+  type: string;
+  count: number;
+  source: string;
+  message: string;
+};
+
+const UNIVERSE_SOURCE_LABELS: Record<string, string> = {
+  sheet: "캐시(시트)",
+  seed: "시드 · 데이터 부족",
+};
+
+function universeSourceLabel(source: string): string {
+  return UNIVERSE_SOURCE_LABELS[source] ?? source;
+}
+
 export default function MarketScannerForm({ initial }: MarketScannerFormProps) {
   const [filters, setFilters] = useState<ScannerFilterValue>(DEFAULT_FILTERS);
   const [forceRescan, setForceRescan] = useState(false);
@@ -31,6 +47,9 @@ export default function MarketScannerForm({ initial }: MarketScannerFormProps) {
   const [response, setResponse] = useState<ScanRunResponse | null>(initial);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [universeInfo, setUniverseInfo] = useState<UniverseInfo | null>(null);
+  const [universeLoading, setUniverseLoading] = useState(false);
+  const [universeReloadKey, setUniverseReloadKey] = useState(0);
   const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -38,6 +57,36 @@ export default function MarketScannerForm({ initial }: MarketScannerFormProps) {
       if (progressTimer.current) clearInterval(progressTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const target = filters.target;
+
+    const loadUniverseInfo = async () => {
+      setUniverseLoading(true);
+      try {
+        const res = await fetch(`/api/universe?type=${target}`);
+        const payload = await res.json();
+        if (active && payload.ok) {
+          setUniverseInfo({
+            type: payload.data.type,
+            count: payload.data.count,
+            source: payload.data.source,
+            message: payload.data.message,
+          });
+        }
+      } catch {
+        // 유니버스 정보 로드 실패는 조용히 무시한다.
+      } finally {
+        if (active) setUniverseLoading(false);
+      }
+    };
+
+    void loadUniverseInfo();
+    return () => {
+      active = false;
+    };
+  }, [filters.target, universeReloadKey]);
 
   function startSimulatedProgress() {
     setProgress(4);
@@ -105,6 +154,7 @@ export default function MarketScannerForm({ initial }: MarketScannerFormProps) {
       const res = await fetch("/api/universe/refresh", { method: "POST" });
       const payload = await res.json();
       setNotice(payload.ok ? payload.data?.message ?? "유니버스를 갱신했습니다." : payload.error ?? "유니버스 갱신 실패");
+      if (payload.ok) setUniverseReloadKey((key) => key + 1);
     } catch {
       setNotice("유니버스 갱신 중 네트워크 오류가 발생했습니다.");
     }
@@ -159,6 +209,45 @@ export default function MarketScannerForm({ initial }: MarketScannerFormProps) {
         <p className="mt-2 text-xs text-slate-400">
           자동 스캔은 Vercel Cron으로 장 시작 전·장중·장 마감 후 서버에서 실행됩니다. 위 토글은 UI 표시용 설정입니다.
         </p>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-slate-500" />
+            유니버스 현황
+          </CardTitle>
+          <CardDescription>
+            {universeLoading
+              ? "유니버스를 불러오는 중입니다..."
+              : universeInfo?.message ?? "유니버스 정보를 불러올 수 없습니다."}
+          </CardDescription>
+        </CardHeader>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-100 p-3">
+            <p className="text-xs text-slate-500">대상 유니버스</p>
+            <p className="text-lg font-bold text-slate-900">{universeInfo?.type ?? filters.target}</p>
+          </div>
+          <div className="rounded-xl border border-slate-100 p-3">
+            <p className="text-xs text-slate-500">구성 종목 수</p>
+            <p className="text-lg font-bold text-slate-900">{universeInfo ? `${universeInfo.count}종목` : "—"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-100 p-3">
+            <p className="text-xs text-slate-500">데이터 출처</p>
+            <p
+              className={`text-lg font-bold ${
+                universeInfo?.source === "seed" ? "text-amber-600" : "text-slate-900"
+              }`}
+            >
+              {universeInfo ? universeSourceLabel(universeInfo.source) : "—"}
+            </p>
+          </div>
+        </div>
+        {universeInfo?.source === "seed" ? (
+          <p className="mt-3 text-xs font-semibold text-amber-700">
+            현재 번들 시드를 사용 중입니다. `유니버스 갱신`을 눌러 KOSPI 200/KOSDAQ 150 공식 구성종목을 가져오세요.
+          </p>
+        ) : null}
       </Card>
 
       {scanning ? (
