@@ -15,12 +15,18 @@ function suitabilityClassName(value: EntryPriceScenario["suitability"]) {
   return "bg-slate-100 text-slate-600";
 }
 
+function scenarioTitle(label: EntryPriceScenario["label"]) {
+  if (label === "보수적") return "눌림 매수가";
+  if (label === "중립적") return "기준 매수가";
+  return "현재가/돌파 접근가";
+}
+
 function ScenarioCard({ scenario }: { scenario: EntryPriceScenario }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-500">{scenario.label} 매수가</p>
+          <p className="text-sm font-semibold text-slate-500">{scenarioTitle(scenario.label)}</p>
           <p className="mt-1 text-2xl font-black text-slate-950">{formatKRW(scenario.buyPrice)}</p>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${suitabilityClassName(scenario.suitability)}`}>

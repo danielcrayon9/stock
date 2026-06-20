@@ -75,7 +75,7 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
   const [status, setStatus] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [entryPrice, setEntryPrice] = useState<SelectedPrice>({
-    label: "중립적 매수가",
+    label: "기준 매수가",
     value: result.neutralBuyPrice ?? result.currentPrice,
   });
   const [targetPrice, setTargetPrice] = useState<SelectedPrice>({
@@ -143,22 +143,22 @@ export default function RecommendationCard({ result }: RecommendationCardProps) 
         <div className="rounded-xl border border-slate-100 bg-white p-3">
           <p className="mb-2 text-sm font-bold text-slate-950">매수가 / 목표가</p>
           <PriceItem
-            label="보수적 매수가"
+            label="눌림 매수가"
             value={result.conservativeBuyPrice}
             tone="buy"
-            onSelect={() => selectPrice("entry", "보수적 매수가", result.conservativeBuyPrice)}
+            onSelect={() => selectPrice("entry", "눌림 매수가", result.conservativeBuyPrice)}
           />
           <PriceItem
-            label="중립적 매수가"
+            label="기준 매수가"
             value={result.neutralBuyPrice}
             tone="buy"
-            onSelect={() => selectPrice("entry", "중립적 매수가", result.neutralBuyPrice)}
+            onSelect={() => selectPrice("entry", "기준 매수가", result.neutralBuyPrice)}
           />
           <PriceItem
-            label="공격적 매수가"
+            label="현재가/돌파 접근가"
             value={result.aggressiveBuyPrice}
             tone="buy"
-            onSelect={() => selectPrice("entry", "공격적 매수가", result.aggressiveBuyPrice)}
+            onSelect={() => selectPrice("entry", "현재가/돌파 접근가", result.aggressiveBuyPrice)}
           />
           <PriceItem
             label="손절가"

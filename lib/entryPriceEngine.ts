@@ -276,8 +276,8 @@ export function calculateEntryPrices({
       "현재 추세가 유지된다는 가정의 기준 가격입니다.",
     ]),
     createScenario("공격적", aggressiveBuyPrice, targetPrice2, stopLossPrice, score.riskScore, [
-      "전고점 또는 저항선 돌파와 모멘텀 진입을 가정했습니다.",
-      "공격적 진입은 반드시 손절가를 함께 관리해야 합니다.",
+      "현재가 근처 또는 가까운 저항선 돌파 접근을 가정했습니다.",
+      "현재가/돌파 접근은 반드시 손절가를 함께 관리해야 합니다.",
     ]),
   ];
   const decision = decideFinalOpinion(scenarios, score, volume);
