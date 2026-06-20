@@ -1,5 +1,5 @@
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatKRW } from "@/lib/formatters";
+import { formatEok, formatKRW } from "@/lib/formatters";
 import type { DisclosureResult, FinancialMetric, FinancialResult, NewsResult, Sentiment } from "@/lib/types";
 
 type FundamentalInsightsProps = {
@@ -16,10 +16,17 @@ function sentimentLabel(sentiment: Sentiment) {
 }
 
 function formatMetric(metric: FinancialMetric) {
-  if (metric.value == null) return "데이터 부족";
+  if (metric.value == null) return metric.source && metric.source !== "OpenDART 사업보고서" ? metric.source : "데이터 부족";
+  if (metric.unit === "억원") return formatEok(metric.value);
   if (metric.unit === "원") return formatKRW(metric.value);
   if (metric.unit === "%") return `${metric.value.toFixed(2)}%`;
   return `${metric.value.toFixed(2)}${metric.unit}`;
+}
+
+function metricValueClassName(metric: FinancialMetric) {
+  if (metric.value != null) return "text-slate-800";
+  if (metric.source && metric.source !== "OpenDART 사업보고서") return "max-w-[180px] text-xs leading-5 text-amber-700";
+  return "text-slate-800";
 }
 
 function ScoreBadge({ label, score }: { label: string; score: number | null | undefined }) {
@@ -123,7 +130,9 @@ export default function FundamentalInsights({ disclosures, financials, news, loa
           {(financials?.metrics ?? []).map((metric) => (
             <div key={metric.label} className="flex items-center justify-between border-b border-slate-100 py-2 last:border-b-0">
               <span className="text-sm text-slate-500">{metric.label}</span>
-              <span className="text-right text-sm font-semibold text-slate-800">{formatMetric(metric)}</span>
+              <span className={`text-right text-sm font-semibold ${metricValueClassName(metric)}`}>
+                {formatMetric(metric)}
+              </span>
             </div>
           ))}
           {!financials ? <p className="py-3 text-sm text-slate-500">실적 데이터 대기 중</p> : null}

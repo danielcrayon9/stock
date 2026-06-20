@@ -19,19 +19,21 @@ function metric(label: string, value: number | null, unit: string, source = "Ope
   return { label, value, unit, source };
 }
 
+const VALUATION_DATA_SOURCE = "주식수/현재가 연동 필요";
+
 export function analyzeFinancialRows(rows: DartFinancialRow[], status: FinancialResult["status"], message: string): FinancialResult {
   if (status !== "ready" || rows.length === 0) {
     return {
       metrics: [
-        metric("매출액", null, "원"),
-        metric("영업이익", null, "원"),
-        metric("순이익", null, "원"),
+        metric("매출액", null, "억원"),
+        metric("영업이익", null, "억원"),
+        metric("순이익", null, "억원"),
         metric("영업이익률", null, "%"),
         metric("부채비율", null, "%"),
         metric("ROE", null, "%"),
-        metric("EPS", null, "원"),
-        metric("PER", null, "배"),
-        metric("PBR", null, "배"),
+        metric("EPS", null, "원", VALUATION_DATA_SOURCE),
+        metric("PER", null, "배", VALUATION_DATA_SOURCE),
+        metric("PBR", null, "배", VALUATION_DATA_SOURCE),
       ],
       status,
       message,
@@ -60,15 +62,15 @@ export function analyzeFinancialRows(rows: DartFinancialRow[], status: Financial
 
   return {
     metrics: [
-      metric("매출액", revenue, "원"),
-      metric("영업이익", operatingProfit, "원"),
-      metric("순이익", netIncome, "원"),
+      metric("매출액", revenue, "억원"),
+      metric("영업이익", operatingProfit, "억원"),
+      metric("순이익", netIncome, "억원"),
       metric("영업이익률", operatingMargin, "%"),
       metric("부채비율", debtRatio, "%"),
       metric("ROE", roe, "%"),
-      metric("EPS", null, "원"),
-      metric("PER", null, "배"),
-      metric("PBR", null, "배"),
+      metric("EPS", null, "원", VALUATION_DATA_SOURCE),
+      metric("PER", null, "배", VALUATION_DATA_SOURCE),
+      metric("PBR", null, "배", VALUATION_DATA_SOURCE),
     ],
     status,
     message,
