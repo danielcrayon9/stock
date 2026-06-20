@@ -11,9 +11,16 @@ commit, and push to GitHub without waiting for the user to ask.
 When verification or operational commands are useful, run them automatically
 without asking the user for confirmation first.
 
+The user explicitly does not want to click "Run" manually for ordinary `npm`
+or `git` commands. Execute them directly whenever they are needed.
+
 ## Workflow
 - Run relevant commands proactively: `npm run lint`, `npm run build`, Vercel
   deploys, health checks, and targeted API checks.
+- Run `npm` commands automatically: installs, lint, build, test, dev checks, and
+  package scripts that are required to complete or verify the task.
+- Run `git` commands automatically: status, diff, add, commit, push, and log as
+  needed for normal workflow. Do not ask the user to confirm these commands.
 - Do not ask "실행할까요?" for ordinary development commands; run them and report
   the result.
 - Stage the changed files, commit with a clear message, then `git push origin HEAD:main`.
