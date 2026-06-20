@@ -1,0 +1,29 @@
+---
+description: Automatically commit and push code changes to GitHub
+alwaysApply: true
+---
+
+# Auto-commit to GitHub
+
+After completing any code/file change in this project, automatically stage,
+commit, and push to GitHub without waiting for the user to ask.
+
+## Workflow
+- Stage the changed files, commit with a clear message, then `git push origin HEAD:main`.
+- Group a logical unit of work into one commit (don't commit half-finished states).
+- Run this after the change builds/lints cleanly when a build/lint step is relevant.
+
+## PowerShell notes (this is a Windows/pwsh environment)
+- Do NOT use `&&` to chain commands; run them separately or with `;`.
+- Do NOT use bash heredocs (`$(cat <<'EOF')`). Use multiple `-m` flags:
+
+```powershell
+git add <paths>
+git commit -m "Short summary" -m "Optional body explaining why"
+git push origin HEAD:main
+```
+
+## Safety
+- Never commit secrets. `.env.local` is gitignored — keep it that way.
+- Never `git push --force` to main, never change git config, never skip hooks.
+- If a commit/push fails, surface the error instead of retrying destructively.
