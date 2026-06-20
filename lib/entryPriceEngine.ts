@@ -45,6 +45,15 @@ function nearestAbove(currentPrice: number, values: Array<number | null | undefi
   return valid.length > 0 ? Math.min(...valid) : null;
 }
 
+function maxValidNearAbove(currentPrice: number, maxPremiumRate: number, values: Array<number | null | undefined>) {
+  const upperBound = currentPrice * (1 + maxPremiumRate);
+  const valid = values.filter(
+    (value): value is number =>
+      value != null && Number.isFinite(value) && value > 0 && value >= currentPrice && value <= upperBound,
+  );
+  return valid.length > 0 ? Math.max(...valid) : null;
+}
+
 function ratio(targetPrice: number | null, buyPrice: number | null, stopLossPrice: number | null) {
   if (targetPrice == null || buyPrice == null || stopLossPrice == null) return null;
   const expectedProfit = targetPrice - buyPrice;
@@ -193,7 +202,7 @@ export function calculateEntryPrices({
     previousHigh != null ? previousHigh * 0.97 : null,
     currentPrice * 0.985,
   ]);
-  const aggressiveBuyPrice = maxValid([
+  const aggressiveBuyPrice = maxValidNearAbove(currentPrice, 0.03, [
     previousHigh != null ? previousHigh * 1.005 : null,
     resistance != null ? resistance * 1.003 : null,
     currentPrice,
