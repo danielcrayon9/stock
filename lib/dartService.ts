@@ -1,3 +1,4 @@
+import { inflateRawSync } from "node:zlib";
 import { appendRow, hasGoogleSheetsConfig } from "@/lib/googleSheets";
 import { classifyDisclosure, calculateDisclosureScore } from "@/lib/disclosureAnalysis";
 import { nowIso } from "@/lib/utils";
@@ -39,7 +40,14 @@ type DartFinancialResponse = {
   list?: DartFinancialRow[];
 };
 
+type CorpCodeInfo = {
+  corpCode: string;
+  stockName: string;
+  stockCode: string;
+};
+
 const DART_BASE_URL = "https://opendart.fss.or.kr/api";
+let corpCodeMapPromise: Promise<Map<string, CorpCodeInfo>> | null = null;
 
 function getDartApiKey() {
   return process.env.OPENDART_API_KEY?.trim();
@@ -74,15 +82,95 @@ async function requestDart<T>(path: string, params: Record<string, string>) {
   return (await response.json()) as T;
 }
 
-export async function getCorpInfo(stockCode: string) {
-  const payload = await requestDart<DartCompanyResponse>("company.json", { stock_code: stockCode });
-  if (payload.status !== "000" || !payload.corp_code) {
-    throw new Error(payload.message || "OpenDART에서 기업 고유번호를 찾지 못했습니다.");
+function extractFirstXmlValue(xml: string, tag: string) {
+  const match = xml.match(new RegExp(`<${tag}>\\s*([^<]*)\\s*</${tag}>`));
+  return match?.[1]?.trim() ?? "";
+}
+
+function unzipFirstXml(buffer: Buffer) {
+  let offset = 0;
+  while (offset + 30 < buffer.length) {
+    const signature = buffer.readUInt32LE(offset);
+    if (signature !== 0x04034b50) break;
+
+    const compressionMethod = buffer.readUInt16LE(offset + 8);
+    const compressedSize = buffer.readUInt32LE(offset + 18);
+    const fileNameLength = buffer.readUInt16LE(offset + 26);
+    const extraLength = buffer.readUInt16LE(offset + 28);
+    const fileNameStart = offset + 30;
+    const dataStart = fileNameStart + fileNameLength + extraLength;
+    const dataEnd = dataStart + compressedSize;
+    const fileName = buffer.subarray(fileNameStart, fileNameStart + fileNameLength).toString("utf8");
+    const compressed = buffer.subarray(dataStart, dataEnd);
+
+    if (fileName.toLowerCase().endsWith(".xml")) {
+      if (compressionMethod === 0) return compressed.toString("utf8");
+      if (compressionMethod === 8) return inflateRawSync(compressed).toString("utf8");
+      throw new Error(`지원하지 않는 OpenDART ZIP 압축 방식입니다. (${compressionMethod})`);
+    }
+
+    offset = dataEnd;
   }
+  throw new Error("OpenDART corpCode ZIP에서 XML 파일을 찾지 못했습니다.");
+}
+
+function parseCorpCodeXml(xml: string) {
+  const map = new Map<string, CorpCodeInfo>();
+  const listPattern = /<list>([\s\S]*?)<\/list>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = listPattern.exec(xml)) != null) {
+    const item = match[1];
+    const stockCode = extractFirstXmlValue(item, "stock_code");
+    const corpCode = extractFirstXmlValue(item, "corp_code");
+    const stockName = extractFirstXmlValue(item, "corp_name");
+    if (/^\d{6}$/.test(stockCode) && corpCode) {
+      map.set(stockCode, { corpCode, stockName: stockName || stockCode, stockCode });
+    }
+  }
+
+  return map;
+}
+
+async function getCorpCodeMap() {
+  if (corpCodeMapPromise) return corpCodeMapPromise;
+
+  corpCodeMapPromise = (async () => {
+    const apiKey = getDartApiKey();
+    if (!apiKey) throw new Error("OpenDART API 키가 설정되지 않았습니다.");
+
+    const response = await fetch(`${DART_BASE_URL}/corpCode.xml?${new URLSearchParams({ crtfc_key: apiKey })}`, {
+      next: { revalidate: 60 * 60 * 24 },
+    });
+    if (!response.ok) {
+      throw new Error(`OpenDART 기업 고유번호 목록 응답 오류 (${response.status})`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const xml = unzipFirstXml(buffer);
+    const map = parseCorpCodeXml(xml);
+    if (map.size === 0) {
+      throw new Error("OpenDART 기업 고유번호 목록에서 상장 종목을 찾지 못했습니다.");
+    }
+    return map;
+  })();
+
+  return corpCodeMapPromise;
+}
+
+export async function getCorpInfo(stockCode: string) {
+  const normalizedCode = stockCode.trim();
+  const map = await getCorpCodeMap();
+  const corp = map.get(normalizedCode);
+  if (!corp) {
+    throw new Error(`OpenDART 기업 고유번호 목록에서 ${normalizedCode} 종목을 찾지 못했습니다.`);
+  }
+
+  const payload = await requestDart<DartCompanyResponse>("company.json", { corp_code: corp.corpCode });
   return {
-    corpCode: payload.corp_code,
-    stockName: payload.corp_name || stockCode,
-    stockCode: payload.stock_code || stockCode,
+    corpCode: corp.corpCode,
+    stockName: payload.status === "000" ? payload.corp_name || corp.stockName : corp.stockName,
+    stockCode: payload.status === "000" ? payload.stock_code || corp.stockCode : corp.stockCode,
   };
 }
 
@@ -179,7 +267,7 @@ export async function getDisclosures(stockCode: string, days = 90): Promise<Disc
   }
 }
 
-export async function getFinancialStatements(stockCode: string, year = new Date().getFullYear() - 1) {
+export async function getFinancialStatements(stockCode: string) {
   if (!getDartApiKey()) {
     return {
       rows: [] as DartFinancialRow[],
@@ -190,28 +278,41 @@ export async function getFinancialStatements(stockCode: string, year = new Date(
 
   try {
     const corp = await getCorpInfo(stockCode);
-    const payload = await requestDart<DartFinancialResponse>("fnlttSinglAcnt.json", {
-      corp_code: corp.corpCode,
-      bsns_year: String(year),
-      reprt_code: "11011",
-    });
+    const currentYear = new Date().getFullYear();
+    const attempts = [
+      { year: currentYear, code: "11013", label: "1분기보고서" },
+      { year: currentYear - 1, code: "11011", label: "사업보고서" },
+      { year: currentYear - 1, code: "11014", label: "3분기보고서" },
+      { year: currentYear - 1, code: "11012", label: "반기보고서" },
+      { year: currentYear - 2, code: "11011", label: "사업보고서" },
+    ];
 
-    if (payload.status === "013") {
-      return {
-        rows: [] as DartFinancialRow[],
-        status: "data-unavailable" as const,
-        message: `${year}년 사업보고서 실적 데이터가 없습니다.`,
-      };
-    }
+    let lastMessage = "";
+    for (const attempt of attempts) {
+      const payload = await requestDart<DartFinancialResponse>("fnlttSinglAcnt.json", {
+        corp_code: corp.corpCode,
+        bsns_year: String(attempt.year),
+        reprt_code: attempt.code,
+      });
 
-    if (payload.status !== "000") {
-      throw new Error(payload.message || "OpenDART 실적 조회에 실패했습니다.");
+      if (payload.status === "000") {
+        return {
+          rows: payload.list ?? [],
+          status: "ready" as const,
+          message: `${attempt.year}년 ${attempt.label} 기준 실적 데이터를 조회했습니다.`,
+        };
+      }
+
+      if (payload.status !== "013") {
+        throw new Error(payload.message || "OpenDART 실적 조회에 실패했습니다.");
+      }
+      lastMessage = payload.message;
     }
 
     return {
-      rows: payload.list ?? [],
-      status: "ready" as const,
-      message: `${year}년 사업보고서 기준 실적 데이터를 조회했습니다.`,
+      rows: [] as DartFinancialRow[],
+      status: "data-unavailable" as const,
+      message: lastMessage || "최근 사업/분기보고서 실적 데이터가 없습니다.",
     };
   } catch (error) {
     return {
