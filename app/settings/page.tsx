@@ -4,6 +4,8 @@ import SettingsForm from "@/components/SettingsForm";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getEnvStatus } from "@/lib/googleSheets";
 
+export const dynamic = "force-dynamic";
+
 export default function SettingsPage() {
   const envStatus = getEnvStatus();
   const configured = envStatus.filter((item) => item.configured).length;
@@ -48,7 +50,7 @@ export default function SettingsPage() {
             {envStatus.length}개 중 {configured}개가 설정되어 있습니다. `.env.local`은 GitHub에 올리지 않습니다.
           </CardDescription>
         </CardHeader>
-        <SettingsForm />
+        <SettingsForm envStatus={envStatus} />
       </Card>
     </>
   );

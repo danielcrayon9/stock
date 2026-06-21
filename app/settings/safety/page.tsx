@@ -2,6 +2,8 @@ import SafetyStatusCard from "@/components/SafetyStatusCard";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSafetyStatus, READ_ONLY_DISCLAIMER } from "@/lib/safetyGuard";
 
+export const dynamic = "force-dynamic";
+
 export default function SafetySettingsPage() {
   const status = getSafetyStatus();
 

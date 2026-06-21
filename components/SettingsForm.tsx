@@ -1,4 +1,5 @@
 import { OPTIONAL_ENV_KEYS, REQUIRED_ENV_KEYS } from "@/lib/constants";
+import type { EnvStatus } from "@/lib/types";
 
 function getOptionalLabel(key: string) {
   if (["ENABLE_ORDER", "READ_ONLY_MODE", "KIS_MODE"].includes(key)) return "안전 · 조회 전용";
@@ -30,7 +31,9 @@ function StatusBadge({ configured, required }: { configured: boolean; required?:
   );
 }
 
-export default function SettingsForm() {
+export default function SettingsForm({ envStatus }: { envStatus: EnvStatus[] }) {
+  const statusByKey = new Map(envStatus.map((item) => [item.key, item.configured]));
+
   return (
     <div className="grid gap-2">
       {REQUIRED_ENV_KEYS.map((key) => (
@@ -39,7 +42,7 @@ export default function SettingsForm() {
             <code className="text-sm font-semibold text-slate-700">{key}</code>
             <p className="mt-1 text-xs text-slate-400">필수 · Google Sheets</p>
           </div>
-          <StatusBadge configured={Boolean(process.env[key]?.trim())} required />
+          <StatusBadge configured={Boolean(statusByKey.get(key))} required />
         </div>
       ))}
       {OPTIONAL_ENV_KEYS.map((key) => (
@@ -48,7 +51,7 @@ export default function SettingsForm() {
             <code className="text-sm font-semibold text-slate-700">{key}</code>
             <p className="mt-1 text-xs text-slate-400">{getOptionalLabel(key)}</p>
           </div>
-          <StatusBadge configured={Boolean(process.env[key]?.trim())} />
+          <StatusBadge configured={Boolean(statusByKey.get(key))} />
         </div>
       ))}
     </div>
