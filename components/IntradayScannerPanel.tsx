@@ -36,6 +36,11 @@ export default function IntradayScannerPanel({ initial }: { initial: IntradaySca
         <div>
           <p className="text-sm font-bold text-slate-950">장중 스캔 대상: {snapshot.target}</p>
           <p className="mt-1 text-xs text-slate-500">{message}</p>
+          {snapshot.topCandidates && snapshot.topCandidates.length > 0 ? (
+            <p className="mt-1 text-xs font-semibold text-emerald-700">
+              Top {snapshot.topCandidates.length} 후보 · 제외 {snapshot.excludedCount ?? 0}건
+            </p>
+          ) : null}
         </div>
         <Button type="button" onClick={runScan} disabled={loading}>
           {loading ? "조회 중..." : "장중 스냅샷 새로고침"}

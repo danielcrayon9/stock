@@ -5,12 +5,14 @@ import type {
   MinuteBar,
   MinuteInterval,
 } from "@/lib/intradayTypes";
+import type { MarketIndexContext } from "@/lib/sampleMarketIndexes";
+import type { VolumePersistenceContext } from "@/lib/volumePersistenceContext";
 
 function workerBaseUrl() {
   return process.env.REALTIME_WORKER_URL?.trim().replace(/\/$/, "") || "";
 }
 
-function workerHeaders() {
+function workerHeaders(): Record<string, string> {
   const secret = process.env.WORKER_API_SECRET?.trim();
   return secret ? { Authorization: `Bearer ${secret}` } : {};
 }
@@ -42,4 +44,12 @@ export async function getWorkerOrderbook(stockCode: string): Promise<IntradayOrd
 
 export async function getWorkerMarketIndex(indexCode: string): Promise<MarketIndexSnapshot | null> {
   return workerGet<MarketIndexSnapshot>(`/market/index?indexCode=${encodeURIComponent(indexCode)}`);
+}
+
+export async function getWorkerVolumeContext(stockCode: string): Promise<VolumePersistenceContext | null> {
+  return workerGet<VolumePersistenceContext>(`/volume-context?stockCode=${encodeURIComponent(stockCode)}`);
+}
+
+export async function getWorkerMarketContext(): Promise<MarketIndexContext | null> {
+  return workerGet<MarketIndexContext>("/market/context");
 }

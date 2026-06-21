@@ -1,8 +1,9 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSafetyStatus } from "@/lib/safetyGuard";
 
-function Badge({ ok, children }: { ok: boolean; children: string }) {
+function Badge({ ok, children }: { ok: boolean; children: ReactNode }) {
   return (
     <span className={`rounded-full px-2 py-1 text-xs font-bold ${ok ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
       {children}

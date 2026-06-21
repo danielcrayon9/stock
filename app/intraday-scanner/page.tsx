@@ -1,3 +1,6 @@
+import TodayNewsCard from "@/components/TodayNewsCard";
+import IntradayTotalScoreCard from "@/components/IntradayTotalScoreCard";
+import VolumePersistenceCard from "@/components/VolumePersistenceCard";
 import IntradayScannerPanel from "@/components/IntradayScannerPanel";
 import MarketIndexCard from "@/components/MarketIndexCard";
 import MinuteFlowCard from "@/components/MinuteFlowCard";
@@ -9,6 +12,40 @@ export const dynamic = "force-dynamic";
 
 export default async function IntradayScannerPage() {
   const snapshot = await getIntradaySnapshot();
+  const top = snapshot.candidates[0];
+  const topFlow = top?.minuteFlowChecks?.length
+    ? {
+        stockCode: top.stockCode,
+        stockName: top.stockName,
+        score: top.minuteFlowScore,
+        checks: top.minuteFlowChecks,
+        dataSource: snapshot.source === "fallback" ? snapshot.message : undefined,
+      }
+    : undefined;
+
+  const topVolume =
+    top?.volumePersistenceChecks?.length
+      ? {
+          stockCode: top.stockCode,
+          stockName: top.stockName,
+          score: top.volumePersistenceScore,
+          checks: top.volumePersistenceChecks,
+          sameTimeRatio: top.sameTimeTradingValueRatio,
+          dataSource: snapshot.source === "fallback" ? snapshot.message : undefined,
+        }
+      : undefined;
+
+  const topOrderbook =
+    top?.orderbookChecks?.length
+      ? {
+          stockCode: top.stockCode,
+          stockName: top.stockName,
+          score: top.orderbookScore,
+          checks: top.orderbookChecks,
+          metrics: top.orderbookMetrics,
+          dataSource: snapshot.source === "fallback" ? snapshot.message : undefined,
+        }
+      : undefined;
 
   return (
     <>
@@ -22,11 +59,49 @@ export default async function IntradayScannerPage() {
         </p>
       </div>
       <SafetyStatusCard />
-      <div className="grid gap-4 lg:grid-cols-3">
-        <MinuteFlowCard />
-        <OrderbookGapCard />
-        <MarketIndexCard indexes={snapshot.marketIndexes} />
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <MinuteFlowCard
+          stockCode={topFlow?.stockCode}
+          stockName={topFlow?.stockName}
+          score={topFlow?.score}
+          checks={topFlow?.checks}
+          dataSource={topFlow?.dataSource}
+        />
+        <VolumePersistenceCard
+          stockCode={topVolume?.stockCode}
+          stockName={topVolume?.stockName}
+          score={topVolume?.score}
+          checks={topVolume?.checks}
+          sameTimeRatio={topVolume?.sameTimeRatio}
+          dataSource={topVolume?.dataSource}
+        />
+        <OrderbookGapCard
+          stockCode={topOrderbook?.stockCode}
+          stockName={topOrderbook?.stockName}
+          score={topOrderbook?.score}
+          checks={topOrderbook?.checks}
+          metrics={topOrderbook?.metrics}
+          dataSource={topOrderbook?.dataSource}
+        />
+        <MarketIndexCard
+          indexes={snapshot.marketIndexes}
+          score={top?.marketIndexScore}
+          checks={top?.marketIndexChecks}
+          breadth={snapshot.marketBreadth ?? null}
+          marketTradingValueChangeRate={snapshot.marketTradingValueChangeRate ?? null}
+          dataSource={snapshot.source === "fallback" ? snapshot.message : undefined}
+        />
       </div>
+      <TodayNewsCard
+        stockCode={top?.stockCode}
+        stockName={top?.stockName}
+        score={top?.todayNewsScore}
+        checks={top?.todayNewsChecks}
+        highlights={top?.todayNewsHighlights}
+        intradayNewsCount={top?.todayNewsHighlights?.filter((item) => item.isIntraday).length ?? 0}
+        dataSource={snapshot.source === "fallback" ? snapshot.message : undefined}
+      />
+      <IntradayTotalScoreCard snapshot={snapshot} highlight={snapshot.topCandidates?.[0] ?? top} />
       <IntradayScannerPanel initial={snapshot} />
     </>
   );

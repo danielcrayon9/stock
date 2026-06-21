@@ -16,6 +16,30 @@ export type MinuteBar = {
   ma20: number | null;
 };
 
+export type MinuteFlowCheck = {
+  id: string;
+  label: string;
+  passed: boolean | null;
+  scoreDelta: number;
+  detail: string;
+};
+
+export type VolumePersistenceCheck = {
+  id: string;
+  label: string;
+  passed: boolean | null;
+  scoreDelta: number;
+  detail: string;
+};
+
+export type OrderbookCheck = {
+  id: string;
+  label: string;
+  passed: boolean | null;
+  scoreDelta: number;
+  detail: string;
+};
+
 export type OrderbookLevel = {
   price: number;
   quantity: number;
@@ -28,6 +52,22 @@ export type IntradayOrderbook = {
   spreadRate: number | null;
   tradeStrength: number | null;
   capturedAt: string;
+};
+
+export type MarketIndexCheck = {
+  id: string;
+  label: string;
+  passed: boolean | null;
+  scoreDelta: number;
+  detail: string;
+};
+
+export type TodayNewsCheck = {
+  id: string;
+  label: string;
+  passed: boolean | null;
+  scoreDelta: number;
+  detail: string;
 };
 
 export type MarketIndexSnapshot = {
@@ -66,6 +106,21 @@ export type IntradayCandidate = {
   dailyTrendScore: number | null;
   riskPenalty: number;
   intradayTotalScore: number | null;
+  forceExcluded?: boolean;
+  exclusionReasons?: string[];
+  topPickRank?: number;
+  scoreBreakdown?: {
+    technicalPart: number;
+    dailyTrendPart: number;
+    minuteFlowPart: number;
+    volumePart: number;
+    orderbookPart: number;
+    newsPart: number;
+    marketPart: number;
+    riskPenalty: number;
+    rawTotal: number;
+    finalTotal: number;
+  };
   recommendationType: IntradayRecommendationType;
   entryTiming: IntradayEntryTiming;
   entryPriceRange: string;
@@ -74,10 +129,31 @@ export type IntradayCandidate = {
   targetPrice2: number | null;
   riskRewardRatio: number | null;
   minuteFlowSummary: string;
+  minuteFlowChecks?: MinuteFlowCheck[];
+  minuteFlowSignals?: string[];
   volumePersistenceSummary: string;
+  volumePersistenceChecks?: VolumePersistenceCheck[];
+  volumePersistenceSignals?: string[];
+  sameTimeTradingValueRatio?: number | null;
   orderbookSummary: string;
+  orderbookChecks?: OrderbookCheck[];
+  orderbookSignals?: string[];
+  orderbookMetrics?: {
+    ask5Qty: number;
+    bid5Qty: number;
+    ask10Qty: number;
+    bid10Qty: number;
+    spreadRate: number | null;
+    tradeStrength: number | null;
+  };
   marketIndexSummary: string;
+  marketIndexChecks?: MarketIndexCheck[];
+  marketIndexSignals?: string[];
+  sectorIndexCode?: string | null;
   todayNewsSummary: string;
+  todayNewsChecks?: TodayNewsCheck[];
+  todayNewsSignals?: string[];
+  todayNewsHighlights?: { title: string; publishedAt: string; isIntraday: boolean }[];
   positiveFactors: string[];
   negativeFactors: string[];
   riskManagement: string;
@@ -95,5 +171,10 @@ export type IntradayScanSnapshot = {
   message: string;
   safetyMessage: string;
   marketIndexes: MarketIndexSnapshot[];
+  marketBreadth?: { risingStockCount: number; fallingStockCount: number } | null;
+  marketTradingValueChangeRate?: number | null;
   candidates: IntradayCandidate[];
+  topCandidates?: IntradayCandidate[];
+  aiCandidatePool?: IntradayCandidate[];
+  excludedCount?: number;
 };

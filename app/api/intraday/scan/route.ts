@@ -10,6 +10,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     data: snapshot,
-    message: "장중 스캔 1단계는 조회 전용 스냅샷을 반환합니다. 실제 주문은 실행되지 않습니다.",
+    message: "7단계: 종합 점수·강제 제외·Top 후보 추출을 완료했습니다. 실제 주문은 실행되지 않습니다.",
   });
 }

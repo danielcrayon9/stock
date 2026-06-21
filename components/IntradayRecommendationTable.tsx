@@ -29,7 +29,7 @@ export default function IntradayRecommendationTable({ candidates }: Props) {
   if (candidates.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-        장중 추천 후보가 없습니다. realtime-worker 연결 후 후보가 표시됩니다.
+        장중 추천 후보가 없습니다. 스캔 새로고침으로 분봉 흐름 점수를 계산하세요.
       </div>
     );
   }
@@ -78,6 +78,9 @@ export default function IntradayRecommendationTable({ candidates }: Props) {
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
                       {item.recommendationType}
                     </span>
+                    {item.forceExcluded ? (
+                      <p className="mt-1 text-xs font-semibold text-rose-600">강제 제외</p>
+                    ) : null}
                   </td>
                   <td className="px-3 py-3 text-right">
                     <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -98,11 +101,102 @@ export default function IntradayRecommendationTable({ candidates }: Props) {
                           <div className="rounded-xl bg-white p-4 text-sm leading-6 text-slate-600">
                             <p className="font-bold text-slate-950">핵심 사유</p>
                             <p>{item.summary}</p>
+                            {item.scoreBreakdown ? (
+                              <p className="mt-2 text-xs text-slate-500">
+                                종합 {item.intradayTotalScore ?? "—"}점 = 일봉 {item.scoreBreakdown.technicalPart}+
+                                {item.scoreBreakdown.dailyTrendPart} · 분봉 {item.scoreBreakdown.minuteFlowPart} ·
+                                거래대금 {item.scoreBreakdown.volumePart} · 호가 {item.scoreBreakdown.orderbookPart} ·
+                                뉴스 {item.scoreBreakdown.newsPart} · 시장 {item.scoreBreakdown.marketPart}
+                                {item.scoreBreakdown.riskPenalty > 0
+                                  ? ` · 패널티 -${item.scoreBreakdown.riskPenalty}`
+                                  : ""}
+                              </p>
+                            ) : null}
+                            {item.exclusionReasons && item.exclusionReasons.length > 0 ? (
+                              <p className="mt-2 text-xs font-semibold text-rose-700">
+                                강제 제외: {item.exclusionReasons.join(", ")}
+                              </p>
+                            ) : null}
                             <p className="mt-2">분봉: {item.minuteFlowSummary}</p>
+                            {item.minuteFlowChecks && item.minuteFlowChecks.length > 0 ? (
+                              <ul className="mt-2 list-inside list-disc text-xs">
+                                {item.minuteFlowChecks.map((check) => (
+                                  <li key={check.id}>
+                                    {check.label}: {check.detail} ({check.scoreDelta > 0 ? "+" : ""}
+                                    {check.scoreDelta !== 0 && check.passed ? check.scoreDelta : "0"})
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
                             <p>거래대금: {item.volumePersistenceSummary}</p>
+                            {item.sameTimeTradingValueRatio != null ? (
+                              <p className="text-xs">전일 동시간 대비 {item.sameTimeTradingValueRatio.toFixed(2)}배</p>
+                            ) : null}
+                            {item.volumePersistenceChecks && item.volumePersistenceChecks.length > 0 ? (
+                              <ul className="mt-2 list-inside list-disc text-xs">
+                                {item.volumePersistenceChecks.map((check) => (
+                                  <li key={check.id}>
+                                    {check.label}: {check.detail} ({check.scoreDelta > 0 ? "+" : ""}
+                                    {check.scoreDelta !== 0 && check.passed ? check.scoreDelta : "0"})
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
                             <p>호가: {item.orderbookSummary}</p>
+                            {item.orderbookMetrics ? (
+                              <p className="text-xs">
+                                매도5 {item.orderbookMetrics.ask5Qty.toLocaleString()} / 매수5{" "}
+                                {item.orderbookMetrics.bid5Qty.toLocaleString()}
+                                {item.orderbookMetrics.tradeStrength != null
+                                  ? ` · 체결강도 ${item.orderbookMetrics.tradeStrength.toFixed(0)}`
+                                  : ""}
+                              </p>
+                            ) : null}
+                            {item.orderbookChecks && item.orderbookChecks.length > 0 ? (
+                              <ul className="mt-2 list-inside list-disc text-xs">
+                                {item.orderbookChecks.map((check) => (
+                                  <li key={check.id}>
+                                    {check.label}: {check.detail} ({check.scoreDelta > 0 ? "+" : ""}
+                                    {check.scoreDelta !== 0 && check.passed ? check.scoreDelta : "0"})
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
                             <p>시장: {item.marketIndexSummary}</p>
+                            {item.sectorIndexCode ? (
+                              <p className="text-xs">업종 지수: {item.sectorIndexCode}</p>
+                            ) : null}
+                            {item.marketIndexChecks && item.marketIndexChecks.length > 0 ? (
+                              <ul className="mt-2 list-inside list-disc text-xs">
+                                {item.marketIndexChecks.map((check) => (
+                                  <li key={check.id}>
+                                    {check.label}: {check.detail} ({check.scoreDelta > 0 ? "+" : ""}
+                                    {check.scoreDelta !== 0 && check.passed ? check.scoreDelta : "0"})
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
                             <p>뉴스: {item.todayNewsSummary}</p>
+                            {item.todayNewsHighlights && item.todayNewsHighlights.length > 0 ? (
+                              <ul className="mt-1 list-inside list-disc text-xs">
+                                {item.todayNewsHighlights.map((news) => (
+                                  <li key={`${news.title}-${news.publishedAt}`}>
+                                    {news.isIntraday ? "[장중] " : ""}
+                                    {news.title}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {item.todayNewsChecks && item.todayNewsChecks.length > 0 ? (
+                              <ul className="mt-2 list-inside list-disc text-xs">
+                                {item.todayNewsChecks.map((check) => (
+                                  <li key={check.id}>
+                                    {check.label}: {check.detail} ({check.scoreDelta > 0 ? "+" : ""}
+                                    {check.scoreDelta !== 0 && check.passed ? check.scoreDelta : "0"})
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
                           </div>
                         </div>
                         <div className="space-y-2 rounded-xl bg-white p-4 text-sm">

@@ -11,6 +11,9 @@ export async function GET() {
       generatedAt: snapshot.generatedAt,
       status: snapshot.status,
       recommendations: snapshot.candidates,
+      topCandidates: snapshot.topCandidates ?? [],
+      aiCandidatePool: snapshot.aiCandidatePool ?? [],
+      excludedCount: snapshot.excludedCount ?? 0,
       safetyMessage: snapshot.safetyMessage,
     },
   });

@@ -12,6 +12,12 @@ KOSPI 200과 KOSDAQ 상위 후보군을 자동으로 스캔해 현재 매수 가
 ## 주요 기능
 
 - 시장 스캐너: KOSPI 200 / KOSDAQ 상위 100 / 둘 다 자동 스캔
+- 장중 스캐너 7단계: 종합 점수 가중 합산, 강제 제외, Top 10/AI 30 후보 추출
+- 장중 스캐너 6단계: 당일 뉴스 시간·공시 교차·호재/악재 키워드 점수
+- 장중 스캐너 5단계: KOSPI/KOSDAQ/업종 지수·breadth·시장 거래대금 추세 점수
+- 장중 스캐너 4단계: 5/10호가 잔량, 상·하방 공백, 매도벽·스프레드·체결강도 점수
+- 장중 스캐너 3단계: 전일 동시간 대비 거래대금, 15/30분 추세, 급증·윗꼬리·다이버전스 점수
+- 장중 스캐너 2단계: 5분봉 VWAP·20MA·고점/저점 상승·돌파·거래량 유지·이탈 경고 분봉 흐름 점수
 - 장중 스캐너 1단계: read-only 안전 상태, 장중 후보 UI, 분봉/호가/시장 지수/거래대금 지속성 표시 구조
 - 스캔 필터: 목표수익률(3~100%), 최소 거래대금, 최소 시가총액, 리스크 성향
 - 종목별 일/주/월/년봉, 거래대금, 추세, 지지/저항, 기술 지표 일괄 분석
@@ -47,7 +53,7 @@ KOSPI 200과 KOSDAQ 상위 후보군을 자동으로 스캔해 현재 매수 가
 ```text
 app/
   scanner/          # 시장 스캐너 페이지
-  intraday-scanner/ # 장중 스캐너 1단계 UI
+  intraday-scanner/ # 장중 스캐너 UI (2단계: 분봉 흐름 점수)
   recommendations/  # 추천 종목 페이지
     intraday/       # 장중 추천 후보 페이지
   analyze/
@@ -75,11 +81,25 @@ lib/
   marketScanner.ts      # 스캔 오케스트레이션(분석→필터→enrich→AI→분류→저장)
   batchAnalyzer.ts      # 배치 룰 분석 + 1차 필터
   recommendationEngine.ts # 종합 점수/추천 유형/하드 제외 룰
-  intradayScanner.ts   # 장중 스캐너 스냅샷/fallback
-  minuteFlowAnalysis.ts # 분봉 흐름 점수화 준비
-  volumePersistence.ts # 거래대금 지속성 점수화 준비
-  orderbookAnalysis.ts # 호가 공백 점수화 준비
-  marketIndexAnalysis.ts # 시장 지수 방향 점수화 준비
+  intradayScanner.ts   # 장중 스캐너 스냅샷 + 분봉 흐름 enrichment
+  minuteBarBuilder.ts  # 1분봉→5분봉 집계, VWAP·20MA 계산
+  minuteBarService.ts  # worker/샘플 분봉 조회
+  sampleMinuteBars.ts  # worker 미연결 시 샘플 5분봉
+  minuteFlowAnalysis.ts # 5분봉 흐름 점수 (VWAP/MA/고저점/돌파/거래량/이탈)
+  volumePersistenceContext.ts # 전일 동시간 거래대금 컨텍스트 (worker/샘플)
+  volumePersistence.ts # 거래대금 지속성 점수 (동시간·15/30분·윗꼬리)
+  sampleOrderbook.ts   # worker 미연결 시 샘플 호가
+  orderbookService.ts  # worker/샘플 호가 조회
+  orderbookAnalysis.ts # 호가 공백·매도벽·스프레드·체결강도 점수
+  sampleMarketIndexes.ts # worker 미연결 시 샘플 지수·breadth
+  marketIndexService.ts  # worker/샘플 시장 지수 컨텍스트 조회
+  marketIndexAnalysis.ts # KOSPI/KOSDAQ/업종·breadth 점수
+  sampleTodayNews.ts     # worker/Naver 미연결 시 샘플 당일 뉴스
+  todayNewsService.ts    # Naver·OpenDART·샘플 당일 뉴스 조회
+  todayNewsAnalysis.ts   # 장중/재탕/공시·호재·악재 점수
+  intradayDailyContext.ts # 일봉 기술·추세·손절/목표가
+  intradayExclusion.ts   # 강제 제외 조건
+  intradayTotalScore.ts  # 종합 점수·Top 후보 추출
   intradayAiJudge.ts   # 장중 AI JSON 응답 형식/fallback
   realtimeClient.ts    # realtime-worker 조회 전용 클라이언트
   safetyGuard.ts       # read-only 안전 가드
@@ -238,10 +258,16 @@ Telegram:
 - `GET /api/scanner/results?scanRunId=`
 - `GET /api/scanner/cron`
 - `GET /api/intraday/snapshot`
-- `POST /api/intraday/scan`
+- `POST /api/intraday/scan` (7단계: 종합 점수 + 강제 제외 + Top 후보)
+- `GET /api/intraday/score?target=`
+- `GET /api/intraday/minute-flow?stockCode=`
+- `GET /api/intraday/volume-persistence?stockCode=`
+- `GET /api/intraday/orderbook-gap?stockCode=`
+- `GET /api/intraday/market-index?stockCode=&market=KOSPI`
+- `GET /api/intraday/today-news?stockCode=&stockName=`
 - `GET /api/intraday/recommendations`
-- `GET /api/market/index?indexCode=KOSPI`
-- `GET /api/orderbook?stockCode=`
+- `GET /api/market/index?indexCode=KOSPI` (`full=true` 전체 컨텍스트, `workerOnly=true` worker 전용)
+- `GET /api/orderbook?stockCode=` (분석 포함, `workerOnly=true`로 worker 전용)
 - `GET /api/minute-bars?stockCode=&interval=1m|3m|5m|15m`
 - `POST /api/ai/intraday-judge`
 - `GET /api/safety/status`
