@@ -1,4 +1,6 @@
 import { findStockByCode, getYahooSymbol, KOREAN_STOCKS } from "@/config/markets";
+import { getCurrentPrice as getKisCurrentPrice, getDailyMinuteBars, getPeriodPrice } from "@/lib/kisClient";
+import { isKisConfigured } from "@/lib/kisToken";
 import type { Market, OhlcvPoint, Stock, StockPriceQuote } from "@/lib/types";
 import {
   getSampleDailyOhlcv,
@@ -192,6 +194,33 @@ export async function searchStocks(query: string, market?: Market): Promise<Stoc
 export async function getStockPrice(stockCode: string, market?: Market): Promise<StockPriceQuote | null> {
   const stock = resolveStock(stockCode, market);
 
+  if (isKisConfigured()) {
+    try {
+      const kis = await getKisCurrentPrice(stockCode);
+      if (kis) {
+        return {
+          ...stock,
+          currentPrice: kis.currentPrice,
+          regularMarketPrice: kis.currentPrice,
+          beforeMarketPrice: null,
+          afterMarketPrice: null,
+          priceSession: "정규장",
+          changeAmount: kis.change,
+          changeRate: kis.changeRate,
+          previousClose: kis.previousClose,
+          tradingVolume: kis.tradingVolume,
+          tradingValue: kis.tradingValue,
+          updatedAt: kis.updatedAt,
+          status: "ready",
+          source: "KIS",
+          message: "KIS API 기준 현재가입니다.",
+        };
+      }
+    } catch {
+      // KIS 실패 시 기존 fallback으로 계속 진행
+    }
+  }
+
   if (isSampleMarketDataEnabled()) {
     const sample = getSamplePrice(stockCode);
     if (sample) return sample;
@@ -245,6 +274,7 @@ export async function getStockPrice(stockCode: string, market?: Market): Promise
       previousClose,
       updatedAt: updatedAt ?? new Date().toISOString(),
       status: "ready",
+      source: "yahoo",
       message: `Yahoo Finance chart API 기준 ${priceSession} 가격입니다.`,
     };
   } catch {
@@ -267,6 +297,25 @@ export async function getStockPrice(stockCode: string, market?: Market): Promise
 
 export async function getDailyOhlcv(stockCode: string, market?: Market) {
   const stock = resolveStock(stockCode, market);
+
+  if (isKisConfigured()) {
+    try {
+      const kis = await getPeriodPrice(stockCode, "daily");
+      if (kis && kis.bars.length > 0) {
+        return {
+          stockCode,
+          period: "daily" as const,
+          points: kis.bars,
+          status: "ready" as const,
+          source: "KIS" as const,
+          partial: kis.partial,
+          message: kis.message,
+        };
+      }
+    } catch {
+      // fallback
+    }
+  }
 
   if (isSampleMarketDataEnabled()) {
     const points = getSampleDailyOhlcv(stockCode);
@@ -300,6 +349,7 @@ export async function getDailyOhlcv(stockCode: string, market?: Market) {
       period: "daily" as const,
       points,
       status: "ready" as const,
+      source: "yahoo" as const,
       message: "Yahoo Finance chart API 기준 일봉 데이터입니다.",
     };
   } catch {
@@ -311,4 +361,59 @@ export async function getDailyOhlcv(stockCode: string, market?: Market) {
       message: DATA_UNAVAILABLE_MESSAGE,
     };
   }
+}
+
+export async function getIntradayOhlcv(stockCode: string) {
+  if (isKisConfigured()) {
+    try {
+      const kis = await getDailyMinuteBars(stockCode);
+      if (kis && kis.bars.length > 0) {
+        return {
+          stockCode,
+          period: "intraday" as const,
+          points: kis.bars,
+          status: "ready" as const,
+          source: "KIS" as const,
+          partial: kis.partial,
+          message: kis.message,
+        };
+      }
+    } catch {
+      // intraday는 KIS 실패 시 데이터 없음으로 처리
+    }
+  }
+
+  return {
+    stockCode,
+    period: "intraday" as const,
+    points: [],
+    status: "data-unavailable" as const,
+    message: "당일 분봉 데이터를 KIS API에서 가져오지 못했습니다.",
+  };
+}
+
+export async function getPeriodOhlcv(
+  stockCode: string,
+  period: "daily" | "weekly" | "monthly" | "yearly",
+) {
+  if (isKisConfigured() && period !== "daily") {
+    try {
+      const kis = await getPeriodPrice(stockCode, period);
+      if (kis && kis.bars.length > 0) {
+        return {
+          stockCode,
+          period,
+          points: kis.bars,
+          status: "ready" as const,
+          source: "KIS" as const,
+          partial: kis.partial,
+          message: kis.message,
+        };
+      }
+    } catch {
+      // daily 집계 fallback
+    }
+  }
+
+  return getDailyOhlcv(stockCode);
 }

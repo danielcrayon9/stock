@@ -40,7 +40,7 @@ export type EnvStatus = {
   configured: boolean;
 };
 
-export type OhlcvPeriod = "daily" | "weekly" | "monthly" | "yearly";
+export type OhlcvPeriod = "daily" | "weekly" | "monthly" | "yearly" | "intraday";
 
 export type OhlcvPoint = {
   date: string;
@@ -259,8 +259,11 @@ export type StockPriceQuote = Stock & {
   changeAmount: number | null;
   changeRate: number | null;
   previousClose: number | null;
+  tradingVolume?: number | null;
+  tradingValue?: number | null;
   updatedAt: string | null;
   status: "ready" | "data-unavailable" | "sample";
+  source?: "KIS" | "yahoo" | "sample";
   message: string;
 };
 
@@ -269,6 +272,8 @@ export type OhlcvResult = {
   period: OhlcvPeriod;
   points: OhlcvPoint[];
   status: "ready" | "data-unavailable" | "sample";
+  source?: "KIS" | "yahoo" | "sample";
+  partial?: boolean;
   message: string;
 };
 

@@ -36,6 +36,9 @@ export default function SafetyStatusCard() {
         <div className="rounded-xl bg-white/80 p-3">
           <p className="text-xs font-semibold text-slate-500">증권사 API</p>
           <p className="mt-1 font-black text-slate-950">{status.kisConfigured ? "KIS 조회 키 설정됨" : "미설정"}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {status.orderApisImplemented ? "주문 API 있음" : "주문 API 없음 · 조회 전용"}
+          </p>
         </div>
         <div className="rounded-xl bg-white/80 p-3">
           <p className="text-xs font-semibold text-slate-500">realtime-worker</p>
@@ -43,7 +46,8 @@ export default function SafetyStatusCard() {
         </div>
       </div>
       <p className="mt-4 text-xs leading-5 text-slate-600">
-        이 프로젝트는 조회, 분석, 추천, 알림 전용입니다. 실제 주문 기능과 자동매매 기능은 제공하지 않습니다.
+        현재 시스템은 한국투자증권 KIS API를 조회 전용으로 사용합니다. 현재가, 분봉, 호가, 지수 조회만 수행하며 실제
+        매수·매도 주문은 실행하지 않습니다.
         <Link href="/settings/safety" className="ml-2 font-bold text-slate-950 underline">
           안전 설정 보기
         </Link>

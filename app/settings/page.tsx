@@ -19,13 +19,23 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>한국투자증권 API 설정 안내</CardTitle>
           <CardDescription>
-            KIS 실전투자 API 키를 사용하더라도 이 앱은 현재가, 분봉, 체결, 호가, 지수 조회 전용으로만 사용합니다.
-            실제 주문 기능은 제공하지 않습니다.
+            KIS 실전투자 API 키를 사용하더라도 이 앱은 현재가, 분봉, 기간별 시세, 호가, 지수 조회 전용으로만 사용합니다.
+            실제 주문 기능은 제공하지 않으며 계좌 잔고에는 영향을 주지 않습니다.
           </CardDescription>
         </CardHeader>
-        <div className="space-y-2 text-sm leading-6 text-slate-600">
-          <p><code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>, <code>KIS_APPROVAL_KEY</code>는 서버 환경변수에만 저장하세요.</p>
-          <p><code>ENABLE_ORDER=false</code>, <code>READ_ONLY_MODE=true</code>가 안전 기본값입니다.</p>
+        <div className="space-y-2 px-6 pb-6 text-sm leading-6 text-slate-600">
+          <p>
+            현재 시스템은 한국투자증권 KIS API를 조회 전용으로 사용합니다. 현재가, 분봉, 호가, 지수 조회만 수행하며
+            실제 매수·매도 주문은 실행하지 않습니다.
+          </p>
+          <p>
+            <code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>는 서버 환경변수에만 저장합니다. API Key, App Secret,
+            Approval Key, 계좌번호는 UI에 표시하지 않습니다.
+          </p>
+          <p>
+            <code>ENABLE_ORDER=false</code>, <code>READ_ONLY_MODE=true</code>가 안전 기본값입니다. 연결 상태는{" "}
+            <code>/api/kis/health</code>에서 확인할 수 있습니다.
+          </p>
           <Link href="/settings/safety" className="font-bold text-slate-950 underline">
             안전 정책 상세 보기
           </Link>

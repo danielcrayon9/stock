@@ -29,7 +29,18 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    data: result.book,
+    data: {
+      stockCode,
+      asks: result.book.askLevels.map((item) => ({ price: item.price, volume: item.quantity })),
+      bids: result.book.bidLevels.map((item) => ({ price: item.price, volume: item.quantity })),
+      totalAskVolume: result.totalAskVolume ?? result.book.askLevels.reduce((sum, item) => sum + item.quantity, 0),
+      totalBidVolume: result.totalBidVolume ?? result.book.bidLevels.reduce((sum, item) => sum + item.quantity, 0),
+      spread: result.spread ?? null,
+      orderbookAvailable: result.orderbookAvailable ?? result.source !== "sample",
+      book: result.book,
+      source: result.source,
+      updatedAt: result.book.capturedAt,
+    },
     analysis,
     source: result.source,
     message: result.message,

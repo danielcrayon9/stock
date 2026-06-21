@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getMarketIndex as getKisMarketIndex } from "@/lib/kisClient";
+import { isKisConfigured } from "@/lib/kisToken";
 import { analyzeMarketIndexes } from "@/lib/marketIndexAnalysis";
 import { getMarketIndexContext } from "@/lib/marketIndexService";
 import { getWorkerMarketIndex } from "@/lib/realtimeClient";
@@ -32,9 +34,44 @@ export async function GET(request: NextRequest) {
   const context = await getMarketIndexContext();
   const index = context.indexes.find((item) => item.indexCode === indexCode) ?? null;
 
+  if (!index && isKisConfigured()) {
+    try {
+      const kis = await getKisMarketIndex(indexCode);
+      if (kis) {
+        return NextResponse.json({
+          ok: true,
+          data: {
+            indexCode: kis.indexCode,
+            currentValue: kis.currentValue,
+            change: kis.change,
+            changeRate: kis.changeRate,
+            direction: kis.direction,
+            source: "KIS",
+            updatedAt: kis.updatedAt,
+          },
+          source: "KIS",
+          message: "KIS API 기준 시장 지수입니다.",
+        });
+      }
+    } catch {
+      // context fallback
+    }
+  }
+
   return NextResponse.json({
     ok: true,
-    data: index,
+    data: index
+      ? {
+          indexCode: index.indexCode,
+          currentValue: index.currentValue,
+          change: null,
+          changeRate: index.changeRate,
+          direction:
+            index.direction === "상승" ? "up" : index.direction === "하락" ? "down" : "flat",
+          source: context.source,
+          updatedAt: index.capturedAt,
+        }
+      : null,
     context: context.indexes,
     source: context.source,
     message: context.message,

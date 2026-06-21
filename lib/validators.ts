@@ -21,10 +21,22 @@ export function parseStockCode(value: string | null) {
 
 export function parseOhlcvPeriod(value: string | null) {
   const period = value?.trim() ?? "daily";
-  if (!["daily", "weekly", "monthly", "yearly"].includes(period)) {
-    return { ok: false as const, error: "period는 daily, weekly, monthly, yearly 중 하나여야 합니다." };
+  if (!["daily", "weekly", "monthly", "yearly", "intraday"].includes(period)) {
+    return {
+      ok: false as const,
+      error: "period는 daily, weekly, monthly, yearly, intraday 중 하나여야 합니다.",
+    };
   }
-  return { ok: true as const, data: period as "daily" | "weekly" | "monthly" | "yearly" };
+  return { ok: true as const, data: period as "daily" | "weekly" | "monthly" | "yearly" | "intraday" };
+}
+
+export function parseIntradayInterval(value: string | null) {
+  const interval = value?.trim() ?? "";
+  if (!interval) return { ok: true as const, data: null };
+  if (!["1m", "3m", "5m", "15m"].includes(interval)) {
+    return { ok: false as const, error: "interval은 1m, 3m, 5m, 15m 중 하나여야 합니다." };
+  }
+  return { ok: true as const, data: interval as "1m" | "3m" | "5m" | "15m" };
 }
 
 const SCAN_TARGETS = ["KOSPI200", "KOSDAQ100", "KOSPI200_KOSDAQ100"] as const;

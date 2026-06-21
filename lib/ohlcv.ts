@@ -1,4 +1,4 @@
-import { getDailyOhlcv } from "@/lib/stockData";
+import { getDailyOhlcv, getIntradayOhlcv, getPeriodOhlcv } from "@/lib/stockData";
 import type { OhlcvPeriod, OhlcvPoint, OhlcvResult } from "@/lib/types";
 
 function getPeriodKey(date: string, period: Exclude<OhlcvPeriod, "daily">) {
@@ -47,7 +47,43 @@ export function aggregateOhlcv(points: OhlcvPoint[], period: OhlcvPeriod): Ohlcv
 }
 
 export async function getOhlcv(stockCode: string, period: OhlcvPeriod, market?: string): Promise<OhlcvResult> {
-  const daily = await getDailyOhlcv(stockCode, market as "KOSPI" | "KOSDAQ" | "KONEX" | "UNKNOWN" | undefined);
+  if (period === "intraday") {
+    return getIntradayOhlcv(stockCode);
+  }
+
+  if (period === "daily") {
+    const daily = await getDailyOhlcv(
+      stockCode,
+      market as "KOSPI" | "KOSDAQ" | "KONEX" | "UNKNOWN" | undefined,
+    );
+    return {
+      stockCode,
+      period,
+      points: daily.points,
+      status: daily.status,
+      source: daily.source,
+      partial: daily.partial,
+      message: daily.message,
+    };
+  }
+
+  const direct = await getPeriodOhlcv(stockCode, period);
+  if (direct.source === "KIS" && direct.points.length > 0) {
+    return {
+      stockCode,
+      period,
+      points: direct.points,
+      status: direct.status,
+      source: direct.source,
+      partial: direct.partial,
+      message: direct.message,
+    };
+  }
+
+  const daily = await getDailyOhlcv(
+    stockCode,
+    market as "KOSPI" | "KOSDAQ" | "KONEX" | "UNKNOWN" | undefined,
+  );
 
   if (daily.points.length === 0) {
     return {
@@ -55,6 +91,7 @@ export async function getOhlcv(stockCode: string, period: OhlcvPeriod, market?: 
       period,
       points: [],
       status: daily.status,
+      source: daily.source,
       message: daily.message,
     };
   }
@@ -66,10 +103,8 @@ export async function getOhlcv(stockCode: string, period: OhlcvPeriod, market?: 
     period,
     points,
     status: daily.status,
-    message:
-      period === "daily"
-        ? daily.message
-        : `${daily.message} ${period} 봉은 일봉 데이터를 집계해 생성했습니다.`,
+    source: daily.source,
+    message: `${daily.message} ${period} 봉은 일봉 데이터를 집계해 생성했습니다.`,
   };
 }
 

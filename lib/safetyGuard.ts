@@ -13,6 +13,14 @@ export function isTradingExecutionDisabled() {
   return envValue("ENABLE_ORDER", "false").toLowerCase() === "false";
 }
 
+export function canPlaceOrder() {
+  return false;
+}
+
+export function areOrderApisImplemented() {
+  return false;
+}
+
 export function getSafetyStatus() {
   const readOnlyMode = isReadOnlyMode();
   const executionDisabled = isTradingExecutionDisabled();
@@ -29,6 +37,9 @@ export function getSafetyStatus() {
     ok: readOnlyMode && executionDisabled,
     readOnlyMode,
     executionDisabled,
+    orderEnabled: !executionDisabled,
+    canPlaceOrder: canPlaceOrder(),
+    orderApisImplemented: areOrderApisImplemented(),
     kisMode,
     brokerProvider,
     realtimeWorkerConfigured,
@@ -37,7 +48,7 @@ export function getSafetyStatus() {
     blockedCapabilities: ["실제 계좌 변경", "자동매매", "매수/매도 실행", "정정/취소 실행"],
     message:
       readOnlyMode && executionDisabled
-        ? "조회, 분석, 추천, 알림 전용 read-only 모드입니다. 실제 주문은 실행되지 않습니다."
+        ? "현재 시스템은 조회 전용 모드입니다. 실제 주문은 실행되지 않습니다."
         : issues.join(" "),
     disclaimer: READ_ONLY_DISCLAIMER,
   };

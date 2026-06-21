@@ -34,6 +34,7 @@ const PERIOD_LABELS: Record<OhlcvPeriod, string> = {
   weekly: "주봉",
   monthly: "월봉",
   yearly: "년봉",
+  intraday: "당일 분봉",
 };
 
 function PriceDetail({ label, value }: { label: string; value: number | null | undefined }) {

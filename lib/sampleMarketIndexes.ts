@@ -7,7 +7,7 @@ export type MarketBreadth = {
   unchangedStockCount?: number;
 };
 
-export type MarketIndexContextSource = "realtime-worker" | "sample";
+export type MarketIndexContextSource = "KIS" | "realtime-worker" | "sample";
 
 export type MarketIndexContext = {
   indexes: MarketIndexSnapshot[];

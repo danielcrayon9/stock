@@ -114,7 +114,10 @@ lib/
   entryPriceEngine.ts
   googleSheets.ts
   newsService.ts
-  stockData.ts
+  stockData.ts         # Yahoo/KIS 시세 + OHLCV provider
+  kisToken.ts          # KIS OAuth 토큰 (메모리 캐시)
+  kisClient.ts         # KIS 조회 전용 REST 클라이언트
+  kisTypes.ts          # KIS 응답 타입
   technicalAnalysis.ts
   telegram.ts
 ```
@@ -147,8 +150,9 @@ npm run dev
 - `READ_ONLY_MODE`
 - `KIS_APP_KEY`
 - `KIS_APP_SECRET`
-- `KIS_ACCOUNT_NO`
-- `KIS_APPROVAL_KEY`
+- `KIS_BASE_URL` (기본: `https://openapi.koreainvestment.com:9443`)
+- `KIS_ACCOUNT_NO` (이번 조회 단계에서는 사용하지 않음)
+- `KIS_APPROVAL_KEY` (WebSocket 단계에서 사용, REST 조회에는 불필요)
 - `KIWOOM_APP_KEY`
 - `REALTIME_WORKER_URL`
 - `WORKER_API_SECRET`
@@ -187,6 +191,29 @@ rg -n "/api/(order($|/)|buy($|/)|sell($|/)|trade($|/))|placeOrder|buyOrder|sellO
 ```
 
 이 명령은 안전 점검용입니다. `orderbook`처럼 호가 조회를 뜻하는 이름은 주문 기능이 아니며 조회 전용 API입니다.
+
+## KIS 조회 API (REST, 조회 전용)
+
+이 프로젝트는 **자동매매 시스템이 아닙니다**. 실전투자 API Key를 사용해도 **조회 API만** 호출하며, 매수·매도·정정·취소 주문 API는 구현하지 않습니다. 계좌번호(`KIS_ACCOUNT_NO`)는 이번 단계에서 사용하지 않습니다.
+
+데이터 provider 우선순위:
+
+1. KIS REST API (`KIS_APP_KEY` + `KIS_APP_SECRET` 설정 시)
+2. 기존 Yahoo Finance / worker / sample fallback
+3. 데이터 없음 표시
+
+로컬 테스트 순서 (사용자가 `npm run dev` 실행 후):
+
+```powershell
+Invoke-RestMethod "http://localhost:3000/api/kis/health" | ConvertTo-Json -Depth 5
+Invoke-RestMethod "http://localhost:3000/api/stocks/price?stockCode=005930" | ConvertTo-Json -Depth 5
+Invoke-RestMethod "http://localhost:3000/api/stocks/ohlcv?stockCode=005930&period=daily" | ConvertTo-Json -Depth 5
+Invoke-RestMethod "http://localhost:3000/api/stocks/ohlcv?stockCode=005930&period=intraday" | ConvertTo-Json -Depth 5
+Invoke-RestMethod "http://localhost:3000/api/orderbook?stockCode=005930" | ConvertTo-Json -Depth 5
+Invoke-RestMethod "http://localhost:3000/api/market/index?indexCode=KOSPI" | ConvertTo-Json -Depth 5
+```
+
+WebSocket 실시간 체결/호가와 `realtime-worker`는 다음 단계에서 `KIS_APPROVAL_KEY`와 함께 확장할 수 있습니다.
 
 ## Google Sheets 준비
 
@@ -251,6 +278,7 @@ Telegram:
 ## 주요 API
 
 - `GET /api/health`
+- `GET /api/kis/health` (KIS 환경변수·토큰·조회 전용 안전 상태)
 - `GET /api/universe?type=KOSPI200|KOSDAQ150|KOSDAQ100|KOSPI200_KOSDAQ100|CUSTOM`
 - `POST /api/universe/refresh`
 - `POST /api/scanner/run` (body: target, targetProfitRate, minTradingValue, minMarketCap, riskProfile, forceRescan, maxAiCandidates)
