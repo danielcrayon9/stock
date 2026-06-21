@@ -12,6 +12,7 @@ KOSPI 200과 KOSDAQ 상위 후보군을 자동으로 스캔해 현재 매수 가
 ## 주요 기능
 
 - 시장 스캐너: KOSPI 200 / KOSDAQ 상위 100 / 둘 다 자동 스캔
+- 장중 스캐너 1단계: read-only 안전 상태, 장중 후보 UI, 분봉/호가/시장 지수/거래대금 지속성 표시 구조
 - 스캔 필터: 목표수익률(3~100%), 최소 거래대금, 최소 시가총액, 리스크 성향
 - 종목별 일/주/월/년봉, 거래대금, 추세, 지지/저항, 기술 지표 일괄 분석
 - 보수적/중립적/공격적 매수가, 손절가, 1·2차 목표가, 손익비 계산
@@ -24,6 +25,8 @@ KOSPI 200과 KOSDAQ 상위 후보군을 자동으로 스캔해 현재 매수 가
 - 같은 날 같은 조건 스캔은 캐시 우선, 강제 재스캔 지원
 - Google Sheets 기반 관심종목/보유종목 CRUD
 - 모든 화면 하단 투자 책임 고지 표시
+- 한국투자증권 실전투자 API Key 사용 시에도 조회 전용 모드만 지원
+- 실제 주문 기능과 자동매매 기능 없음
 
 ## 기술 스택
 
@@ -44,7 +47,9 @@ KOSPI 200과 KOSDAQ 상위 후보군을 자동으로 스캔해 현재 매수 가
 ```text
 app/
   scanner/          # 시장 스캐너 페이지
+  intraday-scanner/ # 장중 스캐너 1단계 UI
   recommendations/  # 추천 종목 페이지
+    intraday/       # 장중 추천 후보 페이지
   analyze/
   alerts/
   dashboard/
@@ -70,6 +75,14 @@ lib/
   marketScanner.ts      # 스캔 오케스트레이션(분석→필터→enrich→AI→분류→저장)
   batchAnalyzer.ts      # 배치 룰 분석 + 1차 필터
   recommendationEngine.ts # 종합 점수/추천 유형/하드 제외 룰
+  intradayScanner.ts   # 장중 스캐너 스냅샷/fallback
+  minuteFlowAnalysis.ts # 분봉 흐름 점수화 준비
+  volumePersistence.ts # 거래대금 지속성 점수화 준비
+  orderbookAnalysis.ts # 호가 공백 점수화 준비
+  marketIndexAnalysis.ts # 시장 지수 방향 점수화 준비
+  intradayAiJudge.ts   # 장중 AI JSON 응답 형식/fallback
+  realtimeClient.ts    # realtime-worker 조회 전용 클라이언트
+  safetyGuard.ts       # read-only 안전 가드
   tradingCost.ts        # 수수료/세금/슬리피지 비용 모델
   dailyBacktest.ts      # 일봉 기반 과거 재현 백테스트
   scanStore.ts          # 스캔 결과/추천 시트 조회 및 당일 캐시
@@ -108,6 +121,19 @@ npm run dev
 
 - `MARKET_DATA_PROVIDER`
 - `USE_SAMPLE_MARKET_DATA`
+- `BROKER_PROVIDER`
+- `KIS_MODE`
+- `ENABLE_ORDER`
+- `READ_ONLY_MODE`
+- `KIS_APP_KEY`
+- `KIS_APP_SECRET`
+- `KIS_ACCOUNT_NO`
+- `KIS_APPROVAL_KEY`
+- `KIWOOM_APP_KEY`
+- `REALTIME_WORKER_URL`
+- `WORKER_API_SECRET`
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
 - `OPENDART_API_KEY`
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
@@ -119,6 +145,28 @@ npm run dev
 - `TELEGRAM_CHAT_ID`
 
 `.env.local`은 `.gitignore`에 포함되어 GitHub에 올라가지 않습니다. Vercel 배포 시에는 Project Settings → Environment Variables에 같은 값을 등록합니다.
+
+## 실전투자 API 안전 정책
+
+이 시스템은 자동매매 시스템이 아니며 실제 주문 기능을 제공하지 않습니다. 한국투자증권 실전투자 API Key를 사용하더라도 현재가, 분봉, 체결, 호가, 지수 조회 같은 조회 API만 사용하도록 설계합니다. 실제 계좌에 영향을 주는 것은 매수, 매도, 정정, 취소 같은 주문 API 호출이며, 본 프로젝트는 주문 API를 구현하지 않습니다.
+
+필수 안전 기본값:
+
+```bash
+KIS_MODE=real
+ENABLE_ORDER=false
+READ_ONLY_MODE=true
+```
+
+`ENABLE_ORDER=true`로 설정하면 앱은 안전 가드에서 오류를 발생시키고 실행을 중단합니다. 이 프로젝트에서는 `ENABLE_ORDER=true` 상태를 지원하지 않습니다. API Key, App Secret, Approval Key, 계좌번호는 서버 환경변수에만 저장하고 브라우저, console.log, error log, UI 화면에 출력하지 않습니다.
+
+주문 관련 경로/함수명이 코드에 없는지 간단히 확인하려면 다음을 실행하세요:
+
+```bash
+rg -n "/api/(order($|/)|buy($|/)|sell($|/)|trade($|/))|placeOrder|buyOrder|sellOrder|modifyOrder|cancelOrder|getOrderableCash|executeTrade|autoTrade" app lib components worker
+```
+
+이 명령은 안전 점검용입니다. `orderbook`처럼 호가 조회를 뜻하는 이름은 주문 기능이 아니며 조회 전용 API입니다.
 
 ## Google Sheets 준비
 
@@ -189,6 +237,14 @@ Telegram:
 - `GET /api/scanner/latest`
 - `GET /api/scanner/results?scanRunId=`
 - `GET /api/scanner/cron`
+- `GET /api/intraday/snapshot`
+- `POST /api/intraday/scan`
+- `GET /api/intraday/recommendations`
+- `GET /api/market/index?indexCode=KOSPI`
+- `GET /api/orderbook?stockCode=`
+- `GET /api/minute-bars?stockCode=&interval=1m|3m|5m|15m`
+- `POST /api/ai/intraday-judge`
+- `GET /api/safety/status`
 - `GET /api/recommendations/latest`
 - `POST /api/recommendations/add-to-watchlist`
 - `POST /api/recommendations/add-to-portfolio-candidate`

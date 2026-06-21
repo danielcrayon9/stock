@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { formatEok, formatKRW, formatPercent, formatRatio, formatScore } from "@/lib/formatters";
@@ -57,7 +58,7 @@ export default function IntradayRecommendationTable({ candidates }: Props) {
           {candidates.map((item) => {
             const expanded = expandedId === item.id;
             return (
-              <>
+              <Fragment key={item.id}>
                 <tr key={item.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setExpandedId(expanded ? null : item.id)}>
                   <td className="px-3 py-3 font-black text-slate-950">{item.rank}</td>
                   <td className="px-3 py-3">
@@ -120,7 +121,7 @@ export default function IntradayRecommendationTable({ candidates }: Props) {
                     </td>
                   </tr>
                 ) : null}
-              </>
+              </Fragment>
             );
           })}
         </tbody>

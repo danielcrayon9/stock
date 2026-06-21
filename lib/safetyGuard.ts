@@ -1,18 +1,6 @@
 export const READ_ONLY_DISCLAIMER =
   "본 분석은 투자 판단 보조용이며 매수·매도 추천이 아닙니다. 데이터는 지연되거나 누락될 수 있으며, 최종 투자 판단과 책임은 사용자에게 있습니다. 이 시스템은 자동매매 및 실제 주문 기능을 제공하지 않습니다.";
 
-const BLOCKED_ROUTE_PATTERNS = ["/api/order", "/api/buy", "/api/sell", "/api/trade"];
-const BLOCKED_CODE_PATTERNS = [
-  "placeOrder",
-  "buyOrder",
-  "sellOrder",
-  "modifyOrder",
-  "cancelOrder",
-  "getOrderableCash",
-  "executeTrade",
-  "autoTrade",
-];
-
 function envValue(key: string, fallback = "") {
   return process.env[key]?.trim() || fallback;
 }
@@ -46,8 +34,7 @@ export function getSafetyStatus() {
     realtimeWorkerConfigured,
     kisConfigured,
     accountLookupDefaultEnabled: false,
-    blockedRoutePatterns: BLOCKED_ROUTE_PATTERNS,
-    blockedCodePatterns: BLOCKED_CODE_PATTERNS,
+    blockedCapabilities: ["실제 계좌 변경", "자동매매", "매수/매도 실행", "정정/취소 실행"],
     message:
       readOnlyMode && executionDisabled
         ? "조회, 분석, 추천, 알림 전용 read-only 모드입니다. 실제 주문은 실행되지 않습니다."

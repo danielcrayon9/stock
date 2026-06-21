@@ -1,4 +1,5 @@
 import { appendRow, getRows, hasGoogleSheetsConfig } from "@/lib/googleSheets";
+import { READ_ONLY_DISCLAIMER } from "@/lib/safetyGuard";
 import { sendAlertToTelegram, hasTelegramConfig } from "@/lib/telegram";
 import { kstDateString } from "@/lib/time";
 import { nowIso } from "@/lib/utils";
@@ -77,7 +78,7 @@ export async function dispatchScanAlerts(response: ScanRunResponse): Promise<{ s
       stockCode: item.stockCode,
       stockName: item.stockName,
       alertType: "new_recommendation",
-      message: `${item.recommendationType} · ${item.summary}`,
+      message: `${item.recommendationType} · ${item.summary}\n주의: ${READ_ONLY_DISCLAIMER}\n실제 주문은 실행되지 않습니다.`,
       currentPrice: item.currentPrice,
       targetPrice: item.targetPrice1,
       stopLossPrice: item.stopLossPrice,
